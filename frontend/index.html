@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Meniscus — A context layer for AI agents</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+
+    <section class="landing" id="landing">
+      <header class="landing-nav">
+        <a class="brand" href="#" id="landing-brand">
+          <span class="brand-mark">M</span>
+          <span class="brand-name">Meniscus</span>
+        </a>
+        <div class="landing-nav-links">
+          <button class="nav-link" data-scroll="how-it-works" type="button">How it works</button>
+          <button class="nav-link" data-scroll="features" type="button">What you get</button>
+          <button class="cta-button" id="enter-app" type="button">
+            Open workspace
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="m9 6 6 6-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <section class="landing-hero">
+        <span class="hero-eyebrow">
+          <span class="pulse"></span>
+          Context layer for AI agents
+        </span>
+        <h1>
+          Every AI agent starts from zero.<br />
+          <em>Meniscus is the working memory underneath.</em>
+        </h1>
+        <p class="hero-sub">
+          A structured, external representation of what you're working on — built from
+          your activity across tools and queryable as a subgraph by any agent. Stop
+          re-explaining yourself to every chat.
+        </p>
+        <div class="hero-cta-row">
+          <button class="cta-button" id="hero-enter-app" type="button">
+            Open the workspace
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="m9 6 6 6-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </button>
+          <button class="cta-button ghost" data-scroll="how-it-works" type="button">See the architecture</button>
+        </div>
+      </section>
+
+      <section class="section" id="how-it-works">
+        <p class="section-eyebrow">How it works</p>
+        <h2 class="section-title">From scattered activity to a queryable subgraph.</h2>
+        <p class="section-sub">
+          Activity flows in from your tools, gets normalized into immutable events,
+          and is structured into threads — clusters of related work that any agent
+          can retrieve as a connected subgraph instead of raw history.
+        </p>
+
+        <div class="diagram-card">
+          <svg class="diagram-svg" viewBox="0 0 980 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Meniscus pipeline diagram">
+            <defs>
+              <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M0,0 L10,5 L0,10 z" fill="#a1a1aa" />
+              </marker>
+              <linearGradient id="capsuleGrad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#6f6bd9" stop-opacity="0.18" />
+                <stop offset="100%" stop-color="#6f6bd9" stop-opacity="0.06" />
+              </linearGradient>
+              <linearGradient id="threadGrad" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stop-color="#7e7be0" />
+                <stop offset="100%" stop-color="#5b58c4" />
+              </linearGradient>
+            </defs>
+
+            <!-- Sources column -->
+            <g transform="translate(20, 40)">
+              <text x="40" y="0" font-family="JetBrains Mono, monospace" font-size="11" fill="#6e6e76" letter-spacing="1.5">SOURCES</text>
+
+              <rect x="0" y="20" width="100" height="36" rx="8" fill="#ffffff" stroke="#e7e7eb" />
+              <text x="50" y="42" font-family="Inter, sans-serif" font-size="12" fill="#15151a" text-anchor="middle">YouTube</text>
+
+              <rect x="0" y="68" width="100" height="36" rx="8" fill="#ffffff" stroke="#e7e7eb" />
+              <text x="50" y="90" font-family="Inter, sans-serif" font-size="12" fill="#15151a" text-anchor="middle">ChatGPT</text>
+
+              <rect x="0" y="116" width="100" height="36" rx="8" fill="#ffffff" stroke="#e7e7eb" />
+              <text x="50" y="138" font-family="Inter, sans-serif" font-size="12" fill="#15151a" text-anchor="middle">GitHub</text>
+
+              <text x="50" y="180" font-family="Inter, sans-serif" font-size="11" fill="#a1a1aa" text-anchor="middle" font-style="italic">…and more</text>
+            </g>
+
+            <!-- Funnel arrows -->
+            <path d="M120 78 C 170 78, 175 130, 215 130" stroke="#a1a1aa" stroke-width="1.2" fill="none" marker-end="url(#arrow)" />
+            <path d="M120 126 L 215 130" stroke="#a1a1aa" stroke-width="1.2" fill="none" marker-end="url(#arrow)" />
+            <path d="M120 174 C 170 174, 175 130, 215 130" stroke="#a1a1aa" stroke-width="1.2" fill="none" marker-end="url(#arrow)" />
+
+            <!-- Pipeline stages -->
+            <g transform="translate(220, 40)">
+              <text x="60" y="0" font-family="JetBrains Mono, monospace" font-size="11" fill="#6e6e76" letter-spacing="1.5">PIPELINE</text>
+
+              <!-- Event -->
+              <rect x="0" y="100" width="120" height="60" rx="10" fill="#ffffff" stroke="#e7e7eb" />
+              <text x="60" y="125" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#15151a" text-anchor="middle">Event</text>
+              <text x="60" y="144" font-family="JetBrains Mono, monospace" font-size="10" fill="#6e6e76" text-anchor="middle">atomic record</text>
+
+              <!-- arrow -->
+              <line x1="125" y1="130" x2="155" y2="130" stroke="#a1a1aa" stroke-width="1.2" marker-end="url(#arrow)" />
+              <text x="140" y="120" font-family="JetBrains Mono, monospace" font-size="9" fill="#a1a1aa" text-anchor="middle">extract</text>
+
+              <!-- Entity -->
+              <rect x="160" y="100" width="120" height="60" rx="10" fill="#ffffff" stroke="#e7e7eb" />
+              <text x="220" y="125" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#15151a" text-anchor="middle">Entity</text>
+              <text x="220" y="144" font-family="JetBrains Mono, monospace" font-size="10" fill="#6e6e76" text-anchor="middle">signal node</text>
+
+              <!-- arrow -->
+              <line x1="285" y1="130" x2="315" y2="130" stroke="#a1a1aa" stroke-width="1.2" marker-end="url(#arrow)" />
+              <text x="300" y="120" font-family="JetBrains Mono, monospace" font-size="9" fill="#a1a1aa" text-anchor="middle">cluster</text>
+
+              <!-- Thread -->
+              <rect x="320" y="92" width="140" height="76" rx="12" fill="url(#capsuleGrad)" stroke="#6f6bd9" stroke-opacity="0.4" />
+              <text x="390" y="120" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#5b58c4" text-anchor="middle">Thread</text>
+              <text x="390" y="138" font-family="JetBrains Mono, monospace" font-size="10" fill="#6e6e76" text-anchor="middle">retrieval unit</text>
+              <text x="390" y="156" font-family="JetBrains Mono, monospace" font-size="9" fill="#6e6e76" text-anchor="middle">events + entities</text>
+
+              <!-- arrow -->
+              <line x1="465" y1="130" x2="495" y2="130" stroke="#a1a1aa" stroke-width="1.2" marker-end="url(#arrow)" />
+              <text x="480" y="120" font-family="JetBrains Mono, monospace" font-size="9" fill="#a1a1aa" text-anchor="middle">retrieve</text>
+
+              <!-- Subgraph -->
+              <g transform="translate(500, 92)">
+                <rect x="0" y="0" width="140" height="76" rx="12" fill="#ffffff" stroke="#e7e7eb" />
+                <!-- mini subgraph nodes -->
+                <circle cx="35" cy="38" r="9" fill="url(#threadGrad)" />
+                <circle cx="70" cy="22" r="6" fill="#b3b1c8" />
+                <circle cx="100" cy="32" r="6" fill="#b3b1c8" />
+                <circle cx="68" cy="52" r="5" fill="#6e6e76" />
+                <circle cx="105" cy="55" r="5" fill="#6e6e76" />
+                <line x1="35" y1="38" x2="70" y2="22" stroke="#a1a1aa" stroke-width="0.8" />
+                <line x1="35" y1="38" x2="100" y2="32" stroke="#a1a1aa" stroke-width="0.8" />
+                <line x1="35" y1="38" x2="68" y2="52" stroke="#a1a1aa" stroke-width="0.8" />
+                <line x1="35" y1="38" x2="105" y2="55" stroke="#a1a1aa" stroke-width="0.8" />
+                <text x="70" y="88" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#15151a" text-anchor="middle">Subgraph</text>
+              </g>
+            </g>
+
+            <!-- Agent receives -->
+            <line x1="860" y1="130" x2="900" y2="130" stroke="#a1a1aa" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#arrow)" />
+            <g transform="translate(900, 100)">
+              <rect x="0" y="0" width="60" height="60" rx="30" fill="#15151a" />
+              <text x="30" y="34" font-family="Inter, sans-serif" font-size="11" font-weight="600" fill="#fbfbfd" text-anchor="middle">AI</text>
+              <text x="30" y="48" font-family="Inter, sans-serif" font-size="9" fill="#a1a1aa" text-anchor="middle">agent</text>
+            </g>
+          </svg>
+          <p class="diagram-caption">
+            Five stages, two edge types, one shared layer.
+            Activity → Event → Entity → Thread → Subgraph — handed to whichever agent asks.
+          </p>
+        </div>
+      </section>
+
+      <section class="section" id="features">
+        <p class="section-eyebrow">What you get</p>
+        <h2 class="section-title">Context that lives outside any single tool.</h2>
+
+        <div class="features">
+          <div class="feature-card">
+            <div class="feature-icon">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M3 12h18M3 6h18M3 18h18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+              </svg>
+            </div>
+            <h3>Cross-tool memory</h3>
+            <p>Events captured from ChatGPT, YouTube, GitHub and more — unified into one persistent layer that any agent can read from.</p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <circle cx="6" cy="7" r="2" stroke="currentColor" stroke-width="1.4" />
+                <circle cx="18" cy="7" r="2" stroke="currentColor" stroke-width="1.4" />
+                <circle cx="12" cy="17" r="2" stroke="currentColor" stroke-width="1.4" />
+                <path d="M7.5 8 11 15m6.5-7L13 15" stroke="currentColor" stroke-width="1.3" />
+              </svg>
+            </div>
+            <h3>Structured retrieval</h3>
+            <p>Threads are the retrieval unit. Agents fetch a connected subgraph — events, entities, summary — instead of scanning raw history.</p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="m12 3 9 5-9 5-9-5 9-5Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
+                <path d="m3 13 9 5 9-5" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
+              </svg>
+            </div>
+            <h3>Agent-ready by default</h3>
+            <p>One simple <code>/query</code> call returns a grounded answer plus the subgraph that produced it — every response is citation-backed.</p>
+          </div>
+        </div>
+      </section>
+
+      <footer class="landing-foot">
+        Built for the agent era · Meniscus MVP
+      </footer>
+    </section>
+
+    <div class="app hidden" id="app">
+      <aside class="sidebar">
+        <div class="sidebar-head">
+          <button class="brand" id="app-brand" type="button" aria-label="Back to landing">
+            <span class="brand-mark">M</span>
+            <span class="brand-name">Meniscus</span>
+          </button>
+        </div>
+
+        <button class="new-thread-btn" id="new-thread-btn" type="button">
+          <span class="plus">+</span>
+          <span>Home</span>
+        </button>
+
+        <div class="sidebar-section">
+          <p class="sidebar-label">Threads</p>
+          <div class="thread-list" id="thread-list"></div>
+        </div>
+
+        <div class="sidebar-foot">
+          <div class="count-row">
+            <span class="count-num" id="count-threads">—</span>
+            <span class="count-label">threads</span>
+          </div>
+          <div class="count-row">
+            <span class="count-num" id="count-events">—</span>
+            <span class="count-label">events</span>
+          </div>
+          <div class="count-row">
+            <span class="count-num" id="count-entities">—</span>
+            <span class="count-label">entities</span>
+          </div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <nav class="topbar">
+          <form class="search-form" id="search-form" role="search">
+            <svg class="search-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.6" />
+              <path d="m20 20-3.5-3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+            </svg>
+            <input
+              id="search-input"
+              type="search"
+              placeholder="Search threads"
+              aria-label="Search threads"
+              autocomplete="off"
+            />
+          </form>
+          <button class="topbar-btn" id="memory-graph-btn" type="button">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="6" cy="7" r="2" fill="currentColor" />
+              <circle cx="18" cy="7" r="2" fill="currentColor" />
+              <circle cx="12" cy="17" r="2" fill="currentColor" />
+              <path d="M7.5 8 11 15m6.5-7L13 15" stroke="currentColor" stroke-width="1.4" />
+            </svg>
+            <span>Memory Graph</span>
+          </button>
+        </nav>
+
+        <section class="view home-view" id="home-view">
+          <div class="hero">
+            <h1 class="hero-title">Meniscus</h1>
+            <p class="hero-tagline">A context layer for AI agents — your working state, queryable.</p>
+
+            <form class="prompt-form" id="prompt-form">
+              <textarea
+                id="prompt-input"
+                rows="1"
+                placeholder="Ask Meniscus anything about your work…"
+                aria-label="Ask Meniscus"
+              ></textarea>
+              <button class="prompt-send" id="prompt-send" type="submit" aria-label="Send">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M12 19V5m0 0-6 6m6-6 6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </button>
+            </form>
+
+            <div class="answer-card hidden" id="answer-card">
+              <div class="answer-head">
+                <span class="answer-label">Retrieved answer</span>
+                <button class="answer-dismiss" id="answer-dismiss" type="button">Dismiss</button>
+              </div>
+              <p class="answer-body" id="answer-body"></p>
+              <div class="answer-context" id="answer-context"></div>
+            </div>
+          </div>
+
+          <section class="recent-section">
+            <div class="recent-head">
+              <p class="sidebar-label">Recent threads</p>
+              <span class="recent-hint">Most recently updated work</span>
+            </div>
+            <div class="recent-grid" id="recent-grid"></div>
+          </section>
+        </section>
+
+        <section class="view thread-view hidden" id="thread-view">
+          <button class="back-btn" id="back-btn" type="button">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="m14 6-6 6 6 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <span>Back</span>
+          </button>
+
+          <div class="thread-detail">
+            <p class="sidebar-label">Thread</p>
+            <h1 id="thread-title">Thread title</h1>
+            <p class="thread-summary" id="thread-summary"></p>
+            <div class="thread-meta" id="thread-meta"></div>
+
+            <div class="thread-block">
+              <p class="sidebar-label">Entities</p>
+              <div class="entity-row" id="thread-entities"></div>
+            </div>
+
+            <div class="thread-block">
+              <p class="sidebar-label">Events</p>
+              <div class="event-list" id="thread-events"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="view graph-view hidden" id="graph-view">
+          <button class="back-btn" id="graph-back-btn" type="button">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="m14 6-6 6 6 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <span>Back</span>
+          </button>
+
+          <div class="graph-head">
+            <p class="sidebar-label">Memory Graph</p>
+            <h1>All threads, events, and entities — connected.</h1>
+            <p class="graph-sub">A subgraph of your work, retrievable by any agent.</p>
+          </div>
+
+          <div class="graph-canvas" id="graph-canvas"></div>
+
+          <div class="graph-legend">
+            <span><i class="dot dot-thread"></i> Thread</span>
+            <span><i class="dot dot-entity"></i> Entity</span>
+            <span><i class="dot dot-event"></i> Event</span>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <dialog class="modal" id="event-modal">
+      <div class="modal-panel">
+        <button class="modal-close" id="event-close" type="button" aria-label="Close">✕</button>
+        <div id="event-content"></div>
+      </div>
+    </dialog>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

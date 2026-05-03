@@ -1,0 +1,7 @@
+.venv/
+.env
+backend/.env
+backend/data/meniscus.db
+__pycache__/
+NOTION_DOC.md
+REDESIGN_BRIEF.md

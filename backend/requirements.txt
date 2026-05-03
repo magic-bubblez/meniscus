@@ -1,0 +1,4 @@
+fastapi==0.115.12
+uvicorn==0.34.2
+google-genai>=0.7.0
+python-dotenv>=1.0.1

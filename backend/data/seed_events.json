@@ -1,0 +1,105 @@
+{
+  "events": [
+    {
+      "source": "youtube",
+      "content": "JWT authentication overview: access token and refresh mechanism",
+      "timestamp": "2026-05-02T09:00:00+00:00",
+      "metadata": {
+        "title": "JWT Authentication Explained",
+        "url": "https://youtube.com/watch?v=jwt-auth-explained"
+      }
+    },
+    {
+      "source": "chatgpt",
+      "content": "How does JWT refresh token work in a backend service",
+      "timestamp": "2026-05-02T09:08:00+00:00",
+      "metadata": {
+        "conversation": "jwt-refresh-flow"
+      }
+    },
+    {
+      "source": "chatgpt",
+      "content": "Why is my access token expiring immediately after login",
+      "timestamp": "2026-05-02T09:18:00+00:00",
+      "metadata": {
+        "conversation": "access-token-expiry"
+      }
+    },
+    {
+      "source": "chatgpt",
+      "content": "How to design a knowledge graph for user activity tracking",
+      "timestamp": "2026-05-02T11:00:00+00:00",
+      "metadata": {
+        "conversation": "knowledge-graph-design"
+      }
+    },
+    {
+      "source": "youtube",
+      "content": "Graph databases explained: nodes, edges, Neo4j basics",
+      "timestamp": "2026-05-02T11:08:00+00:00",
+      "metadata": {
+        "title": "Graph Databases Explained",
+        "url": "https://youtube.com/watch?v=graph-db-basics"
+      }
+    },
+    {
+      "source": "chatgpt",
+      "content": "How to cluster events into meaningful threads",
+      "timestamp": "2026-05-02T11:20:00+00:00",
+      "metadata": {
+        "conversation": "thread-clustering-logic"
+      }
+    },
+    {
+      "source": "chatgpt",
+      "content": "Why is my input box not updating in React",
+      "timestamp": "2026-05-02T13:00:00+00:00",
+      "metadata": {
+        "conversation": "react-input-bug"
+      }
+    },
+    {
+      "source": "youtube",
+      "content": "React state and controlled components explained",
+      "timestamp": "2026-05-02T13:08:00+00:00",
+      "metadata": {
+        "title": "React State and Controlled Components",
+        "url": "https://youtube.com/watch?v=react-controlled-inputs"
+      }
+    },
+    {
+      "source": "chatgpt",
+      "content": "How to fix input field not editable bug in React",
+      "timestamp": "2026-05-02T13:18:00+00:00",
+      "metadata": {
+        "conversation": "react-controlled-input-fix"
+      }
+    },
+    {
+      "source": "chatgpt",
+      "content": "How AI infrastructure startups pitch investors in the agent era",
+      "timestamp": "2026-05-02T15:00:00+00:00",
+      "metadata": {
+        "conversation": "ai-infra-pitching"
+      }
+    },
+    {
+      "source": "youtube",
+      "content": "Y Combinator pitch playbook for early stage founders",
+      "timestamp": "2026-05-02T15:10:00+00:00",
+      "metadata": {
+        "title": "YC Pitch Playbook",
+        "url": "https://youtube.com/watch?v=yc-pitch-playbook"
+      }
+    },
+    {
+      "source": "notion",
+      "content": "Pitch deck outline with revenue model for an infrastructure startup",
+      "timestamp": "2026-05-02T15:25:00+00:00",
+      "metadata": {
+        "page": "meniscus-pitch-deck-v1",
+        "workspace": "Meniscus"
+      }
+    }
+  ]
+}

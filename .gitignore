@@ -1,0 +1,13 @@
+
+# secrets — never commit
+.env
+
+# benchmark data (large)
+bench/data/
+bench/out/
+DESIGN.md
+tests/__pycache__/
+providers/__pycache__/
+cli/__pycache__/
+api/__pycache__/
+__pycache__/

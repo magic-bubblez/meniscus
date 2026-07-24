@@ -102,58 +102,68 @@ def get_thread_entities(thread_id: int) -> set[str]:
     return {row["name"] for row in rows}
 
 
-def get_last_active_thread(timestamp: str) -> Optional[dict]:
-    with db_cursor() as cursor:
-        row = cursor.execute(
-            """
-            SELECT id, title, summary, created_at, updated_at
-            FROM threads
-            WHERE updated_at <= ?
-            ORDER BY updated_at DESC
-            LIMIT 1
-            """
-            ,
-            (timestamp,),
-        ).fetchone()
-        if row is None:
-            row = cursor.execute(
-                """
-                SELECT id, title, summary, created_at, updated_at
-                FROM threads
-                ORDER BY updated_at DESC
-                LIMIT 1
-                """
-            ).fetchone()
-    return dict(row) if row else None
-
-
 def parse_timestamp(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
+def find_matching_thread(signal_set: set[str], timestamp: str) -> Optional[int]:
+    # Score every thread instead of just the last-active one. Comparing only
+    # against the last-active thread makes clustering purely time-based:
+    # any two events within 30 minutes merge regardless of topic, and a
+    # follow-up on an older topic can land in an unrelated thread just
+    # because that one was touched more recently.
+    event_time = parse_timestamp(timestamp)
+    with db_cursor() as cursor:
+        thread_rows = cursor.execute("SELECT id, updated_at FROM threads").fetchall()
+
+    if not thread_rows:
+        return None
+
+    best_id: Optional[int] = None
+    best_score = 0.0
+    best_overlap = 0.0
+    most_recent_id: Optional[int] = None
+    most_recent_minutes_since: Optional[float] = None
+
+    for row in thread_rows:
+        thread_id = int(row["id"])
+        thread_entities = get_thread_entities(thread_id)
+        union = signal_set | thread_entities
+        overlap = len(signal_set & thread_entities) / len(union) if union else 0.0
+
+        thread_time = parse_timestamp(row["updated_at"])
+        minutes_since = abs((event_time - thread_time).total_seconds()) / 60
+        # Recency decays over hours, not minutes, so it can only break ties.
+        recency_score = 1 / (1 + minutes_since / 60)
+
+        score = overlap * 2 + recency_score * 0.3
+        if score > best_score:
+            best_score = score
+            best_id = thread_id
+            best_overlap = overlap
+
+        if most_recent_minutes_since is None or minutes_since < most_recent_minutes_since:
+            most_recent_minutes_since = minutes_since
+            most_recent_id = thread_id
+
+    # Any shared vocabulary beats pure recency.
+    if best_id is not None and best_overlap > 0:
+        return best_id
+
+    # No overlap anywhere. Signal-less short replies ("ok", "why?") still
+    # continue the most recently active thread within a short window.
+    if not signal_set and most_recent_id is not None and most_recent_minutes_since is not None:
+        if most_recent_minutes_since <= 30:
+            return most_recent_id
+
+    return None
+
+
 def choose_thread(signals: Iterable[str], timestamp: str) -> int:
     signal_set = set(signals)
-    last_thread = get_last_active_thread(timestamp)
-    if last_thread is None:
-        return create_thread(signal_set, timestamp)
-
-    thread_entities = get_thread_entities(int(last_thread["id"]))
-    shared_entities = signal_set & thread_entities
-    total_entities = signal_set | thread_entities
-    overlap = len(shared_entities) / len(total_entities) if total_entities else 0.0
-
-    event_time = parse_timestamp(timestamp)
-    last_time = parse_timestamp(last_thread["updated_at"])
-    minutes_since_last = abs((event_time - last_time).total_seconds()) / 60
-
-    # This is simple rule-based clustering.
-    # In production:
-    # - embeddings
-    # - semantic similarity
-    # - temporal modeling
-    # will replace this.
-    if overlap > 0.5 or minutes_since_last <= 30:
-        return int(last_thread["id"])
+    match = find_matching_thread(signal_set, timestamp)
+    if match is not None:
+        return match
     return create_thread(signal_set, timestamp)
 
 

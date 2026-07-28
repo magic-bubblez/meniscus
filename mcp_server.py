@@ -15,8 +15,7 @@ from config import RETRIEVAL_DEFAULT_LIMIT
 
 logger = logging.getLogger(__name__)
 
-# The background processor drains pending (captured-but-unstructured) events
-# every few seconds, so logging never blocks on LLM calls.
+# Background processor drains pending events so logging never blocks on LLM calls.
 _POLL_SECONDS = 3.0
 
 load_dotenv()
@@ -24,8 +23,7 @@ load_dotenv()
 MCP_INSTRUCTIONS = """\
 Meniscus is this person's private, long-term memory -- a structured record of
 what they have actually done, learned, decided, and noticed over time, kept as
-timestamped events grouped into episodes (coherent stretches of activity on one
-topic).
+timestamped facts distilled from what they recorded.
 
 Treat it as your source of truth about the person's own past. Whenever their
 request turns on something they personally did, learned, decided, worked on, or
@@ -35,15 +33,15 @@ questions from your own assumptions or general knowledge; the person's real
 record lives here, and only here.
 
 Two things hold across every tool:
-- An "episode" is a coherent stretch of the person's activity on one topic,
-  returned as a title, a short summary, and its events in time order. The events
-  are the ground truth.
+- A "fact" is a single self-contained statement, stamped with when it happened
+  and the id of the source event it came from. Facts come back in time order.
 - Meniscus has no date parser. When a request mentions a time ("last week", "in
   March", "recently"), work out explicit ISO-8601 dates yourself from today's
   date and pass them.
 
-The tools return structured episodes, not finished answers. You read them and
-reply in your own voice -- grounded in what the records actually show.
+The tools return structured facts, not finished answers. You read them and reply
+in your own voice -- grounded in what the records actually show. To see the raw
+source text behind a fact, call `meniscus_event` with its `event_id`.
 
 Logging (`meniscus_log`) is meant to be INVISIBLE. When something is worth
 remembering, log it in the background and keep going -- do NOT announce it, ask
@@ -64,8 +62,7 @@ def _get_resources():
     try:
         init_db(conn)
         announce_embedding_state()
-        # A missing model must not make logging fail: intake is deterministic,
-        # so the event is saved as pending for a later `men process`.
+        # A missing model saves the event as pending rather than failing intake.
         try:
             model = get_model()
         except (ModelUnavailableError, ImportError):
@@ -178,19 +175,19 @@ def meniscus_query(
     end: str | None = None,
     limit: int = RETRIEVAL_DEFAULT_LIMIT,
 ) -> str:
-    """Search the person's memory for episodes about a topic. Use this whenever
-    the person's request refers to something they may have done, learned, or
-    decided before. Pass `query` as the topic or keywords. To limit to a time
-    period, compute explicit ISO-8601 dates yourself from phrases like "last
-    week" using today's date, and pass `start`/`end`. Returns matching episodes
-    -- each a title, a summary, and its events in time order -- as structured
+    """Search the person's memory for facts about a topic. Use this whenever the
+    person's request refers to something they may have done, learned, or decided
+    before. Pass `query` as the topic or keywords. To limit to a time period,
+    compute explicit ISO-8601 dates yourself from phrases like "last week" using
+    today's date, and pass `start`/`end`. Returns the matching facts plus their
+    closest neighbours, in time order, each with its `event_id` -- structured
     data for you to reason over, NOT a finished answer; you write that."""
 
-    from retrieval import group_into_episodes, search
+    from fact_retrieval import retrieve
 
     conn, embedding_model = _get_query_resources()
     try:
-        hits = search(
+        facts = retrieve(
             conn,
             text=query,
             entity=entity,
@@ -199,8 +196,7 @@ def meniscus_query(
             limit=limit,
             embedding_model=embedding_model,
         )
-        episodes = group_into_episodes(conn, hits)
-        return json.dumps({"episodes": [asdict(e) for e in episodes], "count": len(episodes)})
+        return json.dumps({"facts": [asdict(f) for f in facts], "count": len(facts)})
     finally:
         conn.close()
 
@@ -211,44 +207,76 @@ def meniscus_recent(
     end: str | None = None,
     limit: int = RETRIEVAL_DEFAULT_LIMIT,
 ) -> str:
-    """List the person's episodes from their memory, most recent first,
-    optionally limited to a time window. Use this for time-based questions that
-    name no particular topic ("what did I do last week?", "what have I been
-    working on lately?"). To limit to a period, compute explicit ISO-8601
-    `start`/`end` dates yourself from today's date; omit them for the most recent
-    episodes overall. Returns structured episodes for you to read and summarize
-    -- not a finished answer."""
+    """List the person's facts from their memory, most recent first, optionally
+    limited to a time window. Use this for time-based questions that name no
+    particular topic ("what did I do last week?", "what have I been working on
+    lately?"). To limit to a period, compute explicit ISO-8601 `start`/`end`
+    dates yourself from today's date; omit them for the most recent facts
+    overall. Returns structured facts for you to read and summarize -- not a
+    finished answer."""
 
     from db import get_connection, init_db
-    from retrieval import recent
+    from fact_retrieval import recent_facts
 
     conn = get_connection()
     init_db(conn)
     try:
-        episodes = recent(conn, start=start, end=end, limit=limit)
-        return json.dumps({"episodes": [asdict(e) for e in episodes], "count": len(episodes)})
+        facts = recent_facts(conn, start=start, end=end, limit=limit)
+        return json.dumps({"facts": [asdict(f) for f in facts], "count": len(facts)})
     finally:
         conn.close()
 
 
 @mcp.tool()
-def meniscus_thread(thread_id: int) -> str:
-    """Fetch one complete episode by its id, with every event in it in
-    chronological order. The ids come from meniscus_query or meniscus_recent,
-    which return episodes in summary form -- call this when one of them looks
-    relevant and you need its full detail rather than just the summary. Returns
-    that single episode, or nothing if no episode has that id."""
+def meniscus_event(event_id: int) -> str:
+    """Fetch one raw source event by its id, with the facts distilled from it.
+    The ids come from the `event_id` on any fact returned by meniscus_query or
+    meniscus_recent -- call this when you need the original wording behind a fact
+    rather than the distilled statement. Returns that single event, or an error
+    if no event has that id."""
 
     from db import get_connection, init_db
-    from retrieval import get_thread_detail
+    from fact_retrieval import get_event
 
     conn = get_connection()
     init_db(conn)
     try:
-        episode = get_thread_detail(conn, thread_id)
-        if episode is None:
-            return json.dumps({"error": f"Thread {thread_id} not found"})
-        return json.dumps({"episode": asdict(episode)})
+        event = get_event(conn, event_id)
+        if event is None:
+            return json.dumps({"error": f"Event {event_id} not found"})
+        payload = {**event, "facts": [asdict(f) for f in event["facts"]]}
+        return json.dumps({"event": payload})
+    finally:
+        conn.close()
+
+
+@mcp.tool()
+def meniscus_episode(
+    query: str | None = None,
+    event_id: int | None = None,
+    at: str | None = None,
+) -> str:
+    """Reconstruct the session the person lived around a moment -- "what else was I
+    doing around X", "walk me through that session/week". Anchor it with `query` (a
+    topic), `event_id`, or `at` (an ISO date/time you compute from today). Returns the
+    contiguous run of events around that anchor, in time order, each with its facts --
+    the coherent episode, not scattered matches. Use this for browsing a period; use
+    meniscus_query for topic search."""
+
+    from fact_retrieval import episode
+
+    conn, embedding_model = _get_query_resources()
+    try:
+        episodes = episode(
+            conn,
+            anchor_text=query,
+            anchor_event_id=event_id,
+            at=at,
+            embedding_model=embedding_model,
+        )
+        return json.dumps(
+            {"episodes": [asdict(e) for e in episodes], "count": len(episodes)}
+        )
     finally:
         conn.close()
 

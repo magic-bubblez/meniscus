@@ -91,11 +91,9 @@ returning rows, and not a generic assistant. You are close to this person's
 history, and you speak to them plainly, warmly, and truthfully.
 
 # What you are working from
-You're given the person's message and a set of episodes pulled from their memory.
-Each episode is a stretch of activity on one topic -- a title, a short summary, and
-its events, each stamped with when it was recorded, in order. The events are what
-actually happened; the summaries just help you orient. The most relevant episodes
-come first.
+You're given the person's message and a set of facts pulled from their memory.
+Each fact is a single self-contained statement, stamped with when it happened, in
+time order. The facts are what actually happened. The most relevant come first.
 
 # The one line you never cross
 Everything you say about what the person actually did, learned, or decided must
@@ -129,15 +127,15 @@ month but the events show steady work, showing them that work, with dates, corre
 a distorted memory rather than flattering them. The same honesty runs the other
 way: if the record genuinely shows little, be kind but don't invent a better past.
 
-Throughout: when events carry dates, use them and keep the sequence intact -- a
+Throughout: when facts carry dates, use them and keep the sequence intact -- a
 memory that scrambles the order disorients rather than helps -- and when several
-episodes bear on the question, weave them into one account instead of listing them
+facts bear on the question, weave them into one account instead of listing them
 one by one.
 
 # When their memory has changed
 A person's understanding of their own past shifts -- what they believed at one
 point is often revised later -- and those revisions are frequently the most
-valuable thing the record holds. So when the episodes disagree across time, never
+valuable thing the record holds. So when the facts disagree across time, never
 quietly serve only the latest version or split the difference into a false middle.
 Present the shift as a shift, anchored to its dates, so the person can see how their
 own thinking moved. For instance: "at first you thought the refresh token was the
@@ -154,7 +152,7 @@ next steps -- the system handles that.
 # Voice
 Talk to them directly -- "you", not "the user". Lead with the substance; skip
 preambles and don't restate their question. Never expose the machinery -- words like
-"episode", "thread", "retrieved", "context" don't belong in what they read; they
+"fact", "record", "retrieved", "context" don't belong in what they read; they
 should feel they're hearing their own memory, not a database report. Be as warm or
 as matter-of-fact as the moment calls for, and no longer than it needs to be.
 
@@ -167,8 +165,8 @@ A structured result:
 
 Question: {question}
 
-Episodes:
-{episodes}
+Facts:
+{facts}
 """
 
 
@@ -393,17 +391,11 @@ def add(message: str | None, source: str) -> None:
             click.echo("Duplicate content — no new event created.")
             return
         for event_id in event_ids:
-            row = conn.execute(
-                "SELECT et.thread_id AS tid, t.title AS title "
-                "FROM events e "
-                "LEFT JOIN event_thread_edges et ON et.event_id = e.id "
-                "LEFT JOIN threads t ON t.id = et.thread_id "
-                "WHERE e.id = ?",
-                (event_id,),
-            ).fetchone()
-            if row["tid"] is not None:
-                title = row["title"] or "(untitled)"
-                click.echo(f"Saved event {event_id} → thread {row['tid']}: {title}")
+            fact_count = conn.execute(
+                "SELECT COUNT(*) FROM facts WHERE event_id = ?", (event_id,)
+            ).fetchone()[0]
+            if fact_count:
+                click.echo(f"Saved event {event_id} — {fact_count} fact(s) extracted.")
             else:
                 click.echo(
                     f"Saved event {event_id} — pending "
@@ -498,14 +490,14 @@ def process() -> None:
 
 @cli.command()
 @click.argument("question")
-@click.option("--json", "as_json", is_flag=True, help="Print raw structured episodes.")
-@click.option("--limit", default=None, type=int, help="Maximum episodes/events to return.")
+@click.option("--json", "as_json", is_flag=True, help="Print raw structured facts.")
+@click.option("--limit", default=None, type=int, help="Maximum facts to return.")
 def ask(question: str, as_json: bool, limit: int | None) -> None:
-    """Ask Meniscus using deterministic retrieval plus optional synthesis."""
+    """Ask Meniscus using deterministic fact retrieval plus optional synthesis."""
 
     import config
     from exceptions import ModelUnavailableError
-    from retrieval import group_into_episodes, recent, search
+    from fact_retrieval import recent_facts, retrieve
     from time_bounds import normalize_time_window
 
     resolved_limit = (
@@ -514,10 +506,8 @@ def ask(question: str, as_json: bool, limit: int | None) -> None:
     conn, model, embedding_model, embedding_ready = _get_retrieval_resources()
     try:
         params = RetrievalParams(text=question)
-        # Synthesis depends only on the LLM, not on the embedding backend:
-        # search already skips the vector door when embeddings are absent.
         model_ready = model is not None
-        _ = embedding_ready  # retained for signature compatibility
+        _ = embedding_ready
         if model_ready and model is not None:
             prompt = RETRIEVAL_PARAM_PROMPT_TEMPLATE.format(
                 today=date.today().isoformat(),
@@ -536,7 +526,7 @@ def ask(question: str, as_json: bool, limit: int | None) -> None:
             params = RetrievalParams(text=question)
 
         if params.text:
-            hits = search(
+            facts = retrieve(
                 conn,
                 text=params.text,
                 start=params.start,
@@ -544,93 +534,73 @@ def ask(question: str, as_json: bool, limit: int | None) -> None:
                 limit=resolved_limit,
                 embedding_model=embedding_model,
             )
-            episodes = group_into_episodes(conn, hits)
         else:
-            episodes = recent(
+            facts = recent_facts(
                 conn,
                 start=params.start,
                 end=params.end,
                 limit=resolved_limit,
             )
 
-        episodes_payload = [asdict(episode) for episode in episodes]
+        facts_payload = [asdict(fact) for fact in facts]
         if as_json or not model_ready or model is None:
-            click.echo(json.dumps({"episodes": episodes_payload, "count": len(episodes)}))
+            click.echo(json.dumps({"facts": facts_payload, "count": len(facts)}))
             return
 
         prompt = SYNTHESIS_PROMPT_TEMPLATE.format(
             question=question,
-            episodes=json.dumps(episodes_payload),
+            facts=json.dumps(facts_payload),
         )
         try:
             answer = model.generate_structured(prompt, AskAnswer)
         except ModelUnavailableError:
-            click.echo(json.dumps({"episodes": episodes_payload, "count": len(episodes)}))
+            click.echo(json.dumps({"facts": facts_payload, "count": len(facts)}))
             return
-        if answer.answered and episodes and answer.answer.strip():
+        if answer.answered and facts and answer.answer.strip():
             click.echo(answer.answer)
             return
         no_answer = answer.answer if not answer.answered else ""
-        _print_unanswered(no_answer, episodes, params)
+        _print_unanswered(no_answer, facts, params)
     finally:
         conn.close()
 
 
 def _print_unanswered(
     message: str,
-    episodes: list,
+    facts: list,
     params: RetrievalParams,
 ) -> None:
     """Print model prose plus deterministic inspection commands."""
 
     click.echo(message.strip() or "I don't have anything on that in your memory.")
 
-    if episodes:
+    event_ids: list[int] = []
+    if facts:
         click.echo("")
-        click.echo("Closest episodes:")
-        for episode in episodes:
-            start, end = _episode_date_span(episode)
-            date_range = _format_date_range(start, end)
-            title = episode.title or "(untitled)"
-            click.echo(f"  {episode.thread_id}: {title} ({date_range})")
+        click.echo("Closest facts:")
+        for fact in facts:
+            click.echo(f"  [{_date_part(fact.timestamp)}] {fact.text} (event {fact.event_id})")
+            if fact.event_id not in event_ids:
+                event_ids.append(fact.event_id)
 
-    start, end = _guidance_window(params, episodes)
+    start, end = _guidance_window(params, facts)
     click.echo("")
     click.echo("Try:")
-    for episode in episodes:
-        click.echo(f"  men show thread {episode.thread_id}")
+    for event_id in event_ids:
+        click.echo(f"  men show event {event_id}")
     click.echo(f"  {_windowed_command('men list events', start, end)}")
-    click.echo(f"  {_windowed_command('men list threads', start, end)}")
     click.echo("  men status")
 
 
 def _guidance_window(
     params: RetrievalParams,
-    episodes: list,
+    facts: list,
 ) -> tuple[str | None, str | None]:
-    episode_starts: list[str] = []
-    episode_ends: list[str] = []
-    for episode in episodes:
-        start, end = _episode_date_span(episode)
-        if start is not None:
-            episode_starts.append(start)
-        if end is not None:
-            episode_ends.append(end)
+    dates = [d for fact in facts if (d := _date_part(fact.timestamp)) is not None]
     return (
-        _date_part(params.start) or (min(episode_starts) if episode_starts else None),
-        _date_part(params.end) or (max(episode_ends) if episode_ends else None),
+        _date_part(params.start) or (min(dates) if dates else None),
+        _date_part(params.end) or (max(dates) if dates else None),
     )
-
-
-def _episode_date_span(episode) -> tuple[str | None, str | None]:
-    dates = [
-        date_value
-        for event in episode.events
-        if (date_value := _date_part(event.timestamp)) is not None
-    ]
-    if dates:
-        return min(dates), max(dates)
-    return _date_part(episode.created_at), _date_part(episode.updated_at)
 
 
 def _date_part(value: str | None) -> str | None:
@@ -914,18 +884,18 @@ def status() -> None:
         completed_count = conn.execute(
             "SELECT COUNT(*) FROM events WHERE extraction_status = 'completed'"
         ).fetchone()[0]
-        thread_count = conn.execute("SELECT COUNT(*) FROM threads").fetchone()[0]
+        fact_count = conn.execute("SELECT COUNT(*) FROM facts").fetchone()[0]
         entity_count = conn.execute("SELECT COUNT(*) FROM entities").fetchone()[0]
         click.echo("Meniscus Status")
         click.echo(f"  Events:   {event_count} ({completed_count} completed, {pending_count} pending)")
-        click.echo(f"  Threads:  {thread_count}")
+        click.echo(f"  Facts:    {fact_count}")
         click.echo(f"  Entities: {entity_count}")
         if config.EMBEDDING_PROVIDER == "none":
             click.echo("  Embeddings: disabled")
         else:
-            embedding_count = conn.execute("SELECT COUNT(*) FROM event_embeddings").fetchone()[0]
-            click.echo(f"  Embeddings: {embedding_count}")
-            click.echo(f"  Events without embeddings: {max(completed_count - embedding_count, 0)}")
+            embedding_count = conn.execute("SELECT COUNT(*) FROM fact_embeddings").fetchone()[0]
+            click.echo(f"  Facts embedded: {embedding_count}")
+            click.echo(f"  Facts without embeddings: {max(fact_count - embedding_count, 0)}")
         if pending_count:
             click.echo(
                 f"\n  {pending_count} event(s) pending — run `men process` to process them."

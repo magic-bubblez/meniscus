@@ -17,12 +17,12 @@ class EmbeddingInterface(ABC):
     def embed(self, text: str) -> list[float]:
         """Compute an embedding vector for text."""
 
-    def embed_batch(self, texts: list[str]) -> list[list[float]]:
-        """Embed many texts at once.
+    def embed_query(self, text: str) -> list[float]:
+        """Embed a search query; providers may prepend a retrieval instruction."""
 
-        Default implementation loops `embed`; providers that support a native
-        batch endpoint (e.g. Gemini) override this to collapse N calls into a
-        handful, which is the big win for bulk import.
-        """
+        return self.embed(text)
+
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        """Embed many texts at once; batch-capable providers override this."""
 
         return [self.embed(text) for text in texts]

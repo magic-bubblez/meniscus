@@ -1,9 +1,3 @@
-"""OpenRouter LLM provider (OpenAI-compatible chat completions).
-
-Uses OpenRouter's structured-output support (`response_format` with a strict
-JSON schema) so the model's reply is guaranteed to match the requested Pydantic
-model. Pay-per-token, so there is no small free-tier daily cap.
-"""
 
 from __future__ import annotations
 
@@ -16,6 +10,7 @@ import requests
 from pydantic import BaseModel, ValidationError
 
 from config import (
+    MAX_OUTPUT_TOKENS,
     MAX_RETRIES,
     OPENROUTER_MODEL,
     RETRY_BASE_DELAY_SECONDS,
@@ -43,6 +38,9 @@ class OpenRouterProvider(ModelInterface):
             "model": self._model,
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0,
+            # Bound the reservation: without this OpenRouter holds the model's
+            # entire output budget per request and 402s on a low balance.
+            "max_tokens": MAX_OUTPUT_TOKENS,
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {

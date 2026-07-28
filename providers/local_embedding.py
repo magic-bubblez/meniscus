@@ -1,17 +1,25 @@
-"""Local sentence-transformers embedding provider."""
+"""Local sentence-transformers embedding provider (bge-base, 768d)."""
 
 from __future__ import annotations
+
+import logging
+import os
+
+os.environ.setdefault("HF_HUB_VERBOSITY", "error")
 
 from config import EMBEDDING_DIMENSIONS
 from embedding_interface import EmbeddingInterface
 from exceptions import EmbeddingDimensionMismatchError, ModelUnavailableError
 
-_LOCAL_MODEL_NAME = "BAAI/bge-small-en-v1.5"
-_LOCAL_EMBEDDING_DIM = 384
+logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
+
+_LOCAL_MODEL_NAME = "BAAI/bge-base-en-v1.5"
+_LOCAL_EMBEDDING_DIM = 768
+_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
 
 
 class LocalEmbeddingProvider(EmbeddingInterface):
-    """Local bge-small-en-v1.5 embedding implementation."""
+    """Local bge-base-en-v1.5 embedding implementation."""
 
     def __init__(self) -> None:
         self._model = None
@@ -38,13 +46,15 @@ class LocalEmbeddingProvider(EmbeddingInterface):
     def embed(self, text: str) -> list[float]:
         return self.embed_batch([text])[0]
 
+    def embed_query(self, text: str) -> list[float]:
+        return self.embed_batch([_QUERY_PREFIX + text])[0]
+
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
         if self._model is None:
             self._load_model()
         try:
-            # sentence-transformers encodes a list natively (fast, vectorized).
             embeddings = self._model.encode(texts, normalize_embeddings=True)
             vectors = [row.tolist() for row in embeddings]
         except Exception as exc:

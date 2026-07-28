@@ -1,13 +1,26 @@
 
-# secrets — never commit
+# secrets - never commit
 .env
 
 # benchmark data (large)
 bench/data/
 bench/out/
+bench/memories*/
+bench/*.log
 DESIGN.md
+SESSION_NOTES.md
 tests/__pycache__/
 providers/__pycache__/
 cli/__pycache__/
 api/__pycache__/
 __pycache__/
+# Frozen benchmark memories (large, regenerable via bench/freeze.py)
+bench/memories/
+
+# python env & caches
+.venv/
+venv/
+*.pyc
+.pytest_cache/
+.DS_Store
+*.egg-info/

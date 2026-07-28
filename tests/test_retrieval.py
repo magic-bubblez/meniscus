@@ -65,6 +65,44 @@ def _add_event(
     return event_id
 
 
+def _add_fact(conn, event_id: int, text: str, entity_names: list[str] | None = None) -> int:
+    extraction_id = int(
+        conn.execute(
+            "INSERT INTO extractions (event_id, provider, model, prompt_version, extracted_at) "
+            "VALUES (?, 'p', 'm', 'v', '2026-01-01')",
+            (event_id,),
+        ).lastrowid
+    )
+    fact_id = int(
+        conn.execute(
+            "INSERT INTO facts (event_id, extraction_id, text, position, created_at) "
+            "VALUES (?, ?, ?, 0, '2026-01-01')",
+            (event_id, extraction_id, text),
+        ).lastrowid
+    )
+    for name in entity_names or []:
+        normalized = " ".join(sorted(name.lower().split()))
+        row = conn.execute(
+            "SELECT id FROM entities WHERE normalized_form = ?", (normalized,)
+        ).fetchone()
+        entity_id = (
+            int(row["id"])
+            if row is not None
+            else int(
+                conn.execute(
+                    "INSERT INTO entities (canonical_name, normalized_form, created_at) "
+                    "VALUES (?, ?, '2026-01-01')",
+                    (name, normalized),
+                ).lastrowid
+            )
+        )
+        conn.execute(
+            "INSERT INTO fact_entity_edges (fact_id, entity_id) VALUES (?, ?)",
+            (fact_id, entity_id),
+        )
+    return fact_id
+
+
 def _add_thread(
     conn,
     title: str,
@@ -319,10 +357,11 @@ def test_search_no_embedding_model(conn):
 def test_ask_json_flag_no_llm(tmp_path, monkeypatch):
     db_path = tmp_path / "ask.db"
     monkeypatch.setattr(db, "EMBEDDING_PROVIDER", "none")
+    monkeypatch.setattr("providers.EMBEDDING_PROVIDER", "none")
     conn = db.get_connection(db_path)
     db.init_db(conn)
-    thread_id = _add_thread(conn, "Auth", "2026-01-01T00:00:00+00:00", "2026-01-01T00:00:00+00:00")
-    _add_event(conn, "auth cli fallback", "2026-01-01T00:00:00+00:00", thread_id=thread_id)
+    event_id = _add_event(conn, "auth cli fallback", "2026-01-01T00:00:00+00:00")
+    _add_fact(conn, event_id, "The person used auth cli fallback.", ["auth"])
     conn.commit()
     conn.close()
 
@@ -336,7 +375,7 @@ def test_ask_json_flag_no_llm(tmp_path, monkeypatch):
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload["count"] == 1
-    assert payload["episodes"][0]["thread_id"] == thread_id
+    assert payload["facts"][0]["event_id"] == event_id
 
 
 def test_search_text_window_recall(conn):

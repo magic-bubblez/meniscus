@@ -33,16 +33,17 @@ def _insert_event(conn):
 
 
 def test_build_extraction_prompt():
-    prompt = build_extraction_prompt("cli", "learning about linked lists")
+    prompt = build_extraction_prompt("cli", "learning about linked lists", "2026-01-01T00:00:00+00:00")
     assert "Source: cli" in prompt
     assert "Content: learning about linked lists" in prompt
+    assert "Recorded: 2026-01-01T00:00:00+00:00" in prompt
     assert str(ENTITY_CAP) in prompt
     assert "[ENTITY_CAP]" not in prompt
     assert "Lean toward completeness" in prompt
 
 
 def test_build_extraction_prompt_special_chars():
-    prompt = build_extraction_prompt("cli", 'curly {braces}\n"quotes"')
+    prompt = build_extraction_prompt("cli", 'curly {braces}\n"quotes"', "2026-01-01T00:00:00+00:00")
     assert 'curly {braces}\n"quotes"' in prompt
 
 

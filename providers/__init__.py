@@ -39,6 +39,12 @@ def _make_ollama_llm() -> ModelInterface:
     return OllamaProvider()
 
 
+def _make_anthropic_llm() -> ModelInterface:
+    from providers.claude import AnthropicProvider
+
+    return AnthropicProvider()
+
+
 def _make_gemini_embedding() -> EmbeddingInterface:
     from providers.gemini_embedding import GeminiEmbeddingProvider
 
@@ -54,6 +60,7 @@ def _make_local_embedding() -> EmbeddingInterface:
 _register_llm("gemini", _make_gemini_llm)
 _register_llm("openrouter", _make_openrouter_llm)
 _register_llm("ollama", _make_ollama_llm)
+_register_llm("anthropic", _make_anthropic_llm)
 _register_embedding("gemini", _make_gemini_embedding)
 _register_embedding("local", _make_local_embedding)
 

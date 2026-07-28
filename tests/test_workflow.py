@@ -37,7 +37,8 @@ class WorkflowModel:
                 ExtractedEntity(name=k, aliases=[]) for k in _KEYWORDS if k in content
             ]
             return ExtractionResult(
-                entities=entities or [ExtractedEntity(name="note", aliases=[])]
+                entities=entities or [ExtractedEntity(name="note", aliases=[])],
+                facts=[content.strip() or "a note"],
             )
         if name == "ThreadSummary":
             return ThreadSummary(title="A work session", summary="Some work happened.")
@@ -71,41 +72,34 @@ def test_full_user_journey(runner):
 
     # 2. Capture three notes: two related (jwt) + one unrelated (groceries).
     added = _run(runner, "add", "learning about jwt auth refresh tokens")
-    assert "thread" in added.lower()  # was assigned to a thread, not left pending
+    assert "fact" in added.lower()  # facts extracted, not left pending
     _run(runner, "add", "more jwt refresh token debugging today")
     _run(runner, "add", "bought groceries at the store")
 
-    # 3. All processed; the two jwt notes clustered, groceries stands alone.
+    # 3. All processed into facts.
     status = _run(runner, "status")
     assert "3 completed, 0 pending" in status
-    assert "Threads:  2" in status
+    assert "Facts:" in status and "Facts:    0" not in status
     assert "Entities:" in status and "Entities: 0" not in status
 
-    # 4. Threads are listed with titles.
-    threads = _run(runner, "list", "threads")
-    assert "No threads" not in threads
-    assert "session" in threads.lower()
-
-    # 5. A thread can be shown in full.
-    shown = _run(runner, "show", "thread", "1")
+    # 4. Events are listable and inspectable.
+    events = _run(runner, "list", "events", "--source", "cli")
+    assert "jwt" in events.lower()
+    shown = _run(runner, "show", "event", "1")
     assert "jwt" in shown.lower()
 
-    # 6. Ask returns a synthesized, grounded answer.
+    # 5. Ask returns a synthesized, grounded answer over facts.
     answer = _run(runner, "ask", "what did i do with jwt?")
     assert "jwt" in answer.lower()
 
-    # 7. Nothing left to process.
+    # 6. Nothing left to process.
     assert "caught up" in _run(runner, "process").lower()
 
-    # 8. Duplicate capture is rejected.
+    # 7. Duplicate capture is rejected.
     assert "duplicate" in _run(
         runner, "add", "learning about jwt auth refresh tokens"
     ).lower()
 
-    # 9. Rebuild reproduces the derived thread state from the source of truth.
+    # 8. Dormant thread grouping can still be rebuilt for a comparison run.
     rebuilt = _run(runner, "rebuild-threads")
-    assert "rebuilt 2 thread(s) from 3 event(s)" in rebuilt.lower()
-
-    # 10. Entities exist and are queryable by the entity door.
-    entities = _run(runner, "list", "events", "--source", "cli")
-    assert "jwt" in entities.lower()
+    assert "rebuilt" in rebuilt.lower() and "3 event(s)" in rebuilt.lower()

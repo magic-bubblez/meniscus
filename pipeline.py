@@ -3,17 +3,21 @@
 from __future__ import annotations
 
 import logging
+import os
+import re
 import sqlite3
 import struct
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timezone
 
 from db import transactional
 from embedding_interface import EmbeddingInterface
-from entity_extractor import extract_entities
+from entity_extractor import EXTRACTION_PROMPT_VERSION, extract_entities
 from event_intake import ingest_event
 from exceptions import EmbeddingBackendUnavailableError, ModelUnavailableError
+from models import ExtractionResult
 from model_interface import ModelInterface
 from thread_assigner import assign_thread
 from thread_summarizer import summarize_thread
@@ -29,25 +33,26 @@ def process_event(
     model: ModelInterface,
     embedding_model: EmbeddingInterface | None,
 ) -> int:
-    """Process a pending event through semantic processing, assignment, summary."""
+    """Extract facts from a pending event, then store and embed them."""
 
     extraction_result = extract_entities(conn, event_id, model)
-    embedding = _compute_embedding(conn, event_id, embedding_model)
+    if not extraction_result.facts:
+        logger.warning("Event %s produced no facts; left pending for retry.", event_id)
+        return 0
 
     with transactional(conn) as txn:
         entity_ids = reconcile_entities(txn, event_id, extraction_result)
-        if embedding is not None:
-            _store_embedding(txn, event_id, embedding)
+        fact_rows = _store_facts(txn, event_id, extraction_result)
+        _store_fact_entity_edges(txn, fact_rows, entity_ids)
         txn.execute(
             "UPDATE events SET extraction_status = ? WHERE id = ?",
             (ExtractionStatus.COMPLETED, event_id),
         )
 
-    with transactional(conn) as txn:
-        thread_id = assign_thread(txn, event_id, entity_ids)
+    _embed_facts(conn, fact_rows, embedding_model)
 
-    summarize_thread(conn, thread_id, model)
-    return thread_id
+    # DORMANT: raw-event embedding + thread grouping + summarization.
+    return event_id
 
 
 def _compute_embedding(
@@ -104,11 +109,128 @@ def _store_embedding(
     )
 
 
+def _extraction_provenance() -> tuple[str, str]:
+    """Resolve (provider, model) for the active extractor from config/env."""
+
+    import config
+
+    provider = os.environ.get("MENISCUS_PROVIDER") or config.DEFAULT_MODEL_PROVIDER
+    model = {
+        "openrouter": config.OPENROUTER_MODEL,
+        "gemini": config.GEMINI_MODEL,
+        "anthropic": config.ANTHROPIC_MODEL,
+        "ollama": config.OLLAMA_MODEL,
+    }.get(provider, provider)
+    return provider, model
+
+
+def _store_facts(
+    conn: sqlite3.Connection,
+    event_id: int,
+    extraction_result: ExtractionResult,
+) -> list[tuple[int, str]]:
+    """Append one extraction run and its facts (never updates); return (fact_id, text)."""
+
+    provider, model_name = _extraction_provenance()
+    extracted_at = datetime.now(timezone.utc).isoformat()
+    cursor = conn.execute(
+        "INSERT INTO extractions "
+        "(event_id, provider, model, prompt_version, extracted_at) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (event_id, provider, model_name, EXTRACTION_PROMPT_VERSION, extracted_at),
+    )
+    extraction_id = int(cursor.lastrowid)
+    fact_rows: list[tuple[int, str]] = []
+    for position, fact in enumerate(extraction_result.facts):
+        cur = conn.execute(
+            "INSERT INTO facts (event_id, extraction_id, text, position, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (event_id, extraction_id, fact, position, extracted_at),
+        )
+        fact_rows.append((int(cur.lastrowid), fact))
+    return fact_rows
+
+
+_WORD_RE = re.compile(r"\w+")
+
+
+def _content_tokens(text: str) -> set[str]:
+    return {t for t in _WORD_RE.findall(text.lower()) if len(t) > 1}
+
+
+def _store_fact_entity_edges(
+    conn: sqlite3.Connection,
+    fact_rows: list[tuple[int, str]],
+    entity_ids: list[int],
+) -> None:
+    """Link each fact to the event's entities whose surface form appears in it."""
+
+    surfaces: dict[int, list[set[str]]] = {}
+    for entity_id in entity_ids:
+        forms: list[str] = []
+        row = conn.execute(
+            "SELECT canonical_name FROM entities WHERE id = ?", (entity_id,)
+        ).fetchone()
+        if row is not None:
+            forms.append(row["canonical_name"])
+        for alias_row in conn.execute(
+            "SELECT alias FROM entity_aliases WHERE entity_id = ?", (entity_id,)
+        ).fetchall():
+            forms.append(alias_row["alias"])
+        token_sets = [tokens for tokens in (_content_tokens(f) for f in forms) if tokens]
+        surfaces[entity_id] = token_sets
+
+    for fact_id, text in fact_rows:
+        fact_tokens = _content_tokens(text)
+        for entity_id, token_sets in surfaces.items():
+            if any(form_tokens <= fact_tokens for form_tokens in token_sets):
+                conn.execute(
+                    "INSERT OR IGNORE INTO fact_entity_edges (fact_id, entity_id) "
+                    "VALUES (?, ?)",
+                    (fact_id, entity_id),
+                )
+
+
+def _fact_vec0_available(conn: sqlite3.Connection) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'fact_embeddings'"
+    ).fetchone()
+    return row is not None
+
+
+def _embed_facts(
+    conn: sqlite3.Connection,
+    fact_rows: list[tuple[int, str]],
+    embedding_model: EmbeddingInterface | None,
+) -> None:
+    """Embed fact texts and store them in fact_embeddings (own transaction)."""
+
+    import config
+
+    if embedding_model is None or not fact_rows or not _fact_vec0_available(conn):
+        return
+    for i in range(0, len(fact_rows), config.EMBED_BATCH_SIZE):
+        chunk = fact_rows[i : i + config.EMBED_BATCH_SIZE]
+        try:
+            vectors = _embed_batch_with_retry(embedding_model, [text for _fid, text in chunk])
+        except ModelUnavailableError as exc:
+            logger.warning("Fact embedding unavailable (%s); %d facts left unembedded.", exc, len(chunk))
+            continue
+        with transactional(conn) as txn:
+            for (fact_id, _text), vector in zip(chunk, vectors):
+                blob = struct.pack(f"{len(vector)}f", *vector)
+                txn.execute(
+                    "INSERT INTO fact_embeddings (fact_id, embedding) VALUES (?, ?)",
+                    (fact_id, blob),
+                )
+
+
 def process_pending_events(
     conn: sqlite3.Connection,
     model: ModelInterface | None,
     embedding_model: EmbeddingInterface | None,
     on_progress: "Callable[[int, int], None] | None" = None,
+    allow_large_run: bool = False,
 ) -> list[int]:
     """Process all pending events using the parallel batch engine.
 
@@ -120,11 +242,13 @@ def process_pending_events(
         return []
 
     rows = conn.execute(
-        "SELECT id, source, content FROM events "
+        "SELECT id, source, content, timestamp FROM events "
         "WHERE extraction_status = 'pending' ORDER BY timestamp ASC, id ASC"
     ).fetchall()
-    pending = [(int(r["id"]), r["source"], r["content"]) for r in rows]
-    return _process_events_batch(conn, pending, model, embedding_model, on_progress)
+    pending = [(int(r["id"]), r["source"], r["content"], r["timestamp"]) for r in rows]
+    return _process_events_batch(
+        conn, pending, model, embedding_model, on_progress, allow_large_run
+    )
 
 
 def ingest_and_process(
@@ -171,20 +295,9 @@ def import_and_process(
     model: ModelInterface | None,
     embedding_model: EmbeddingInterface | None,
     on_progress: "Callable[[int, int], None] | None" = None,
+    allow_large_run: bool = False,
 ) -> list[int]:
-    """Import a file/directory and process the created events in PARALLEL.
-
-    Design (see below): the slow, independent work (entity extraction, embedding)
-    runs concurrently; only the order-dependent thread assignment stays serial,
-    preserving determinism. Memory is bounded by processing in windows.
-
-      Phase A  extract (parallel) + embed (batched)   — I/O-bound, concurrent
-      Phase B  reconcile + store + assign (serial, timestamp order) — fast, local
-      Phase C  summarize each affected thread (parallel LLM, serial writes)
-
-    Intake always commits first; if no model is available the events stay
-    ``pending`` for a later ``men process`` rather than raising.
-    """
+    """Import a file/directory and batch-process created events (parallel extract)."""
 
     from pathlib import Path
 
@@ -209,50 +322,47 @@ def import_and_process(
 
     placeholders = ",".join("?" for _ in event_ids)
     rows = conn.execute(
-        f"SELECT id, source, content FROM events "
+        f"SELECT id, source, content, timestamp FROM events "
         f"WHERE id IN ({placeholders}) AND extraction_status = 'pending' "
         f"ORDER BY timestamp ASC, id ASC",
         event_ids,
     ).fetchall()
-    pending = [(int(r["id"]), r["source"], r["content"]) for r in rows]
-    _process_events_batch(conn, pending, model, embedding_model, on_progress)
+    pending = [(int(r["id"]), r["source"], r["content"], r["timestamp"]) for r in rows]
+    _process_events_batch(
+        conn, pending, model, embedding_model, on_progress, allow_large_run
+    )
     return event_ids
 
 
 def _process_events_batch(
     conn: sqlite3.Connection,
-    pending: list[tuple[int, str, str]],
+    pending: list[tuple[int, str, str, str]],
     model: ModelInterface,
     embedding_model: EmbeddingInterface | None,
     on_progress: "Callable[[int, int], None] | None" = None,
+    allow_large_run: bool = False,
 ) -> list[int]:
-    """Parallel batch engine shared by `men import` and `men process`.
-
-      Phase A  extract (parallel) + embed (batched)   — I/O-bound, concurrent
-      Phase B  reconcile + store + assign (serial, timestamp order) — fast, local
-      Phase C  summarize each affected thread (parallel LLM, serial writes)
-
-    Assignment stays serial and in timestamp order to preserve determinism;
-    memory is bounded by windows. Returns the processed event ids.
-    """
+    """Parallel batch engine shared by `men import` and `men process`."""
 
     import config
-    import thread_summarizer as summarizer
+    from spend_gate import enforce_spend_ceiling
+
+    _provider, model_slug = _extraction_provenance()
+    enforce_spend_ceiling(pending, model_slug, allow_large_run)
 
     total = len(pending)
     processed_ids: list[int] = []
-    affected: set[int] = set()
     workers = max(1, config.IMPORT_CONCURRENCY)
 
     for start in range(0, total, config.IMPORT_WINDOW):
         window = pending[start : start + config.IMPORT_WINDOW]
 
-        # --- Phase A1: parallel entity extraction (workers touch NO DB) ---
+        # --- Phase A: parallel entity + fact extraction (workers touch NO DB) ---
         extractions: dict[int, object] = {}
         with ThreadPoolExecutor(max_workers=workers) as pool:
             futures = {
-                pool.submit(_extract_with_retry, src, content, model): eid
-                for eid, src, content in window
+                pool.submit(_extract_with_retry, src, content, ts, model): eid
+                for eid, src, content, ts in window
             }
             for future in as_completed(futures):
                 eid = futures[future]
@@ -268,80 +378,34 @@ def _process_events_batch(
             )
             break
 
-        # --- Phase A2: batched embeddings for the extracted events ---
-        embeddings: dict[int, list[float] | None] = {}
-        if embedding_model is not None:
-            ok = [(eid, content) for eid, _src, content in window if eid in extractions]
-            for i in range(0, len(ok), config.EMBED_BATCH_SIZE):
-                chunk = ok[i : i + config.EMBED_BATCH_SIZE]
-                try:
-                    vectors = _embed_batch_with_retry(
-                        embedding_model, [c for _eid, c in chunk]
-                    )
-                    for (eid, _c), vector in zip(chunk, vectors):
-                        embeddings[eid] = vector
-                except ModelUnavailableError as exc:
-                    logger.warning(
-                        "Embedding batch failed (%s); those events stay unembedded.",
-                        exc,
-                    )
-                    for eid, _c in chunk:
-                        embeddings[eid] = None
-
-        # --- Phase B: serial reconcile + store + assign, in timestamp order ---
-        for eid, _src, _content in window:
+        # --- Phase B: serial reconcile + store facts + edges, in timestamp order ---
+        window_fact_rows: list[tuple[int, str]] = []
+        for eid, _src, _content, _ts in window:
             if eid not in extractions:
                 continue
+            result = extractions[eid]
+            if not result.facts:
+                logger.warning("Event %s produced no facts; left pending for retry.", eid)
+                continue
             with transactional(conn) as txn:
-                entity_ids = reconcile_entities(txn, eid, extractions[eid])
-                vector = embeddings.get(eid)
-                if vector is not None:
-                    _store_embedding(txn, eid, vector)
+                entity_ids = reconcile_entities(txn, eid, result)
+                fact_rows = _store_facts(txn, eid, result)
+                _store_fact_entity_edges(txn, fact_rows, entity_ids)
                 txn.execute(
                     "UPDATE events SET extraction_status = ? WHERE id = ?",
                     (ExtractionStatus.COMPLETED, eid),
                 )
-            with transactional(conn) as txn:
-                affected.add(assign_thread(txn, eid, entity_ids))
+            window_fact_rows.extend(fact_rows)
             processed_ids.append(eid)
             if on_progress is not None:
                 on_progress(len(processed_ids), total)
 
-    # --- Phase C: parallel summarization (LLM in workers, writes on main) ---
-    if affected:
-        inputs: dict[int, tuple[str, str]] = {}
-        for tid in sorted(affected):
-            event_rows = conn.execute(
-                "SELECT e.id, e.content, e.timestamp, e.source FROM events e "
-                "JOIN event_thread_edges ete ON e.id = ete.event_id "
-                "WHERE ete.thread_id = ? ORDER BY e.timestamp ASC",
-                (tid,),
-            ).fetchall()
-            if event_rows:
-                inputs[tid] = summarizer.render_events(event_rows)
+        # --- Phase C: batched fact embeddings ---
+        _embed_facts(conn, window_fact_rows, embedding_model)
 
-        summaries: dict[int, tuple[str, str]] = {}
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = {
-                pool.submit(_summarize_with_retry, text, first, model): tid
-                for tid, (text, first) in inputs.items()
-            }
-            for future in as_completed(futures):
-                tid = futures[future]
-                try:
-                    summaries[tid] = future.result()
-                except Exception:  # keep going; thread keeps its default title
-                    pass
-
-        for tid, (title, summary) in summaries.items():
-            summarizer.write_thread_summary(conn, tid, title, summary)
-
+    # DORMANT: raw-event embedding + thread grouping + summarization.
     return processed_ids
 
-
-# --------------------------------------------------------------------------- #
-# Batch helpers: rate-limit-aware retry wrappers (run inside worker threads)   #
-# --------------------------------------------------------------------------- #
 
 def _is_rate_limit(exc: Exception) -> bool:
     message = str(exc)
@@ -370,10 +434,10 @@ def _ratelimit_retry(call):
     raise last_error  # pragma: no cover
 
 
-def _extract_with_retry(source: str, content: str, model: ModelInterface):
+def _extract_with_retry(source: str, content: str, timestamp: str, model: ModelInterface):
     from entity_extractor import extract_from_content
 
-    return _ratelimit_retry(lambda: extract_from_content(source, content, model))
+    return _ratelimit_retry(lambda: extract_from_content(source, content, model, timestamp))
 
 
 def _embed_batch_with_retry(embedding_model: EmbeddingInterface, texts: list[str]):

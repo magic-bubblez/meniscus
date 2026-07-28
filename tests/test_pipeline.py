@@ -7,7 +7,10 @@ from pipeline import ingest_and_process, process_pending_events
 class FakeModel:
     def generate_structured(self, prompt, response_model):
         if response_model is ExtractionResult:
-            return ExtractionResult(entities=[ExtractedEntity(name="python")])
+            return ExtractionResult(
+                entities=[ExtractedEntity(name="python")],
+                facts=["The person is learning Python."],
+            )
         if response_model is ThreadSummary:
             return ThreadSummary(title="Python work", summary="Worked on Python.")
         raise AssertionError(response_model)
@@ -25,7 +28,16 @@ def test_ingest_and_process_without_embeddings(conn):
     assert len(event_ids) == 1
     event = conn.execute("SELECT extraction_status FROM events").fetchone()
     assert event["extraction_status"] == "completed"
-    assert conn.execute("SELECT COUNT(*) FROM event_thread_edges").fetchone()[0] == 1
+    # threads are dormant now; grouping happens at read time over facts
+    assert conn.execute("SELECT COUNT(*) FROM event_thread_edges").fetchone()[0] == 0
+
+    facts = conn.execute("SELECT id, text FROM facts").fetchall()
+    assert [f["text"] for f in facts] == ["The person is learning Python."]
+    edge_entities = conn.execute(
+        "SELECT en.canonical_name FROM fact_entity_edges fe "
+        "JOIN entities en ON en.id = fe.entity_id"
+    ).fetchall()
+    assert [r["canonical_name"] for r in edge_entities] == ["python"]
 
 
 def test_process_pending_events(conn):
@@ -92,8 +104,6 @@ def test_import_and_process_parallel(conn, tmp_path):
         "SELECT COUNT(*) FROM events WHERE extraction_status = 'completed'"
     ).fetchone()[0]
     assert completed == 3
-    assert conn.execute("SELECT COUNT(*) FROM threads").fetchone()[0] >= 1
+    assert conn.execute("SELECT COUNT(*) FROM facts").fetchone()[0] == 3
+    assert conn.execute("SELECT COUNT(*) FROM fact_entity_edges").fetchone()[0] == 3
     assert progress[-1] == (3, 3)               # progress reported to completion
-    # every thread got a summary title
-    titles = [r[0] for r in conn.execute("SELECT title FROM threads").fetchall()]
-    assert all(t for t in titles)

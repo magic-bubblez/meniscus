@@ -139,11 +139,11 @@ def _validate_or_record_embedding_dimensions(conn: sqlite3.Connection) -> None:
 def _validate_known_provider_dimension_config() -> None:
     """Fail before schema creation for built-in provider/config mismatches."""
 
-    if EMBEDDING_PROVIDER == "local" and EMBEDDING_DIMENSIONS != 384:
+    if EMBEDDING_PROVIDER == "local" and EMBEDDING_DIMENSIONS != 768:
         raise EmbeddingDimensionMismatchError(
-            "Embedding provider 'local' produces 384-dimensional vectors, but "
-            f"EMBEDDING_DIMENSIONS is {EMBEDDING_DIMENSIONS}. Set "
-            "EMBEDDING_DIMENSIONS=384 before initializing the database."
+            "Embedding provider 'local' (bge-base) produces 768-dimensional vectors, "
+            f"but EMBEDDING_DIMENSIONS is {EMBEDDING_DIMENSIONS}. Set "
+            "EMBEDDING_DIMENSIONS=768 before initializing the database."
         )
 
 

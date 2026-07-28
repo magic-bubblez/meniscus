@@ -23,3 +23,7 @@ class DuplicateEventError(MeniscusError):
 
 class DatabaseError(MeniscusError):
     """Raised for unrecoverable database setup or schema errors."""
+
+
+class SpendCeilingError(MeniscusError):
+    """Raised when a bulk extraction run's estimated token cost exceeds the ceiling."""

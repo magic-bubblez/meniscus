@@ -22,16 +22,16 @@ def test_get_embedding_model_unknown_provider():
 
 
 def test_local_embedding_dimension_property():
-    assert LocalEmbeddingProvider().dimension == 384
+    assert LocalEmbeddingProvider().dimension == 768
 
 
 def test_get_embedding_model_dimension_mismatch(monkeypatch):
-    monkeypatch.setattr(providers, "EMBEDDING_DIMENSIONS", 768)
+    monkeypatch.setattr(providers, "EMBEDDING_DIMENSIONS", 384)
     with pytest.raises(EmbeddingDimensionMismatchError):
         providers.get_embedding_model("local")
 
 
 def test_get_embedding_model_dimension_match(monkeypatch):
-    monkeypatch.setattr(providers, "EMBEDDING_DIMENSIONS", 384)
+    monkeypatch.setattr(providers, "EMBEDDING_DIMENSIONS", 768)
     provider = providers.get_embedding_model("local")
     assert isinstance(provider, LocalEmbeddingProvider)

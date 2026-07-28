@@ -13,9 +13,10 @@ class ExtractedEntity(BaseModel):
 
 
 class ExtractionResult(BaseModel):
-    """Entity extraction response shape."""
+    """Entity + fact extraction response shape (one call produces both)."""
 
     entities: list[ExtractedEntity]
+    facts: list[str] = Field(default_factory=list)
 
 
 class ThreadSummary(BaseModel):

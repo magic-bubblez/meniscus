@@ -13,26 +13,25 @@ from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv()
 
-# Benchmark config override: LOCAL embeddings (bge-small, 384d) so we don't hit
+# Benchmark config override: LOCAL embeddings (bge-base, 768d) so we don't hit
 # the Gemini embedding free-tier cap (100/min) when bulk-ingesting histories.
 # Patch config BEFORE importing modules that bind these names.
 import config as _cfg
 _cfg.EMBEDDING_PROVIDER = "local"
-_cfg.EMBEDDING_DIMENSIONS = 384
+_cfg.EMBEDDING_DIMENSIONS = 768
 
 from db import get_connection, init_db
 from event_intake import ingest_event
 from pipeline import process_pending_events
 from providers import get_model, get_embedding_model
-from retrieval import search, group_into_episodes
+import fact_retrieval as fr
 from cli.main import SYNTHESIS_PROMPT_TEMPLATE, AskAnswer
-from dataclasses import asdict
 
 # Belt-and-suspenders: re-patch the names each module bound at import time.
-import db as _db; _db.EMBEDDING_PROVIDER = "local"; _db.EMBEDDING_DIMENSIONS = 384
-import providers as _p; _p.EMBEDDING_PROVIDER = "local"; _p.EMBEDDING_DIMENSIONS = 384
+import db as _db; _db.EMBEDDING_PROVIDER = "local"; _db.EMBEDDING_DIMENSIONS = 768
+import providers as _p; _p.EMBEDDING_PROVIDER = "local"; _p.EMBEDDING_DIMENSIONS = 768
 import thread_assigner as _ta; _ta.EMBEDDING_PROVIDER = "local"
-import providers.local_embedding as _le; _le.EMBEDDING_DIMENSIONS = 384
+import providers.local_embedding as _le; _le.EMBEDDING_DIMENSIONS = 768
 
 
 def parse_ts(s: str) -> datetime:
@@ -54,14 +53,14 @@ def build_memory(conn, instance, model, emb):
 
 
 def answer_question(conn, question, emb, synth_model):
-    hits = search(conn, text=question, limit=30, embedding_model=emb)
-    episodes = group_into_episodes(conn, hits)
-    retrieved = {e.event_id for ep in episodes for e in ep.events}
-    payload = [asdict(ep) for ep in episodes]
-    injected = json.dumps(payload)   # exactly what gets handed to the synthesizer
-    prompt = SYNTHESIS_PROMPT_TEMPLATE.format(question=question, episodes=injected)
+    facts = fr.retrieve(conn, text=question, limit=30, embedding_model=emb)
+    retrieved = {f.event_id for f in facts}
+    # Lean payload: only what the synthesizer reads — fact text, time, source.
+    payload = [{"timestamp": f.timestamp, "source": f.source, "text": f.text} for f in facts]
+    injected = json.dumps(payload)
+    prompt = SYNTHESIS_PROMPT_TEMPLATE.format(question=question, facts=injected)
     ans = synth_model.generate_structured(prompt, AskAnswer)
-    return ans.answer, retrieved, len(episodes), len(injected)
+    return ans.answer, retrieved, len(facts), len(injected)
 
 
 def run(dataset_path, selector, out_path):
@@ -78,7 +77,7 @@ def run(dataset_path, selector, out_path):
             conn = get_connection(Path(db)); init_db(conn)
             try:
                 gold = build_memory(conn, inst, model, emb)
-                hyp, retrieved, n_ep, inj_chars = answer_question(conn, inst["question"], emb, synth)
+                hyp, retrieved, n_facts, inj_chars = answer_question(conn, inst["question"], emb, synth)
             finally:
                 conn.close()
             recall = (len(gold & retrieved) / len(gold)) if gold else None
@@ -90,7 +89,7 @@ def run(dataset_path, selector, out_path):
                                    "injected_tokens": inj_chars // 4, "full_tokens": full_chars // 4}) + "\n")
             rows.append((inst["question_type"], recall, reduction, inj_chars // 4))
             print(f"[{k}/{len(data)}] {inst['question_type']:<24} recall={recall} "
-                  f"reduction={reduction:.1%} inj~{inj_chars//4}tok / full~{full_chars//4}tok ep={n_ep}", flush=True)
+                  f"reduction={reduction:.1%} inj~{inj_chars//4}tok / full~{full_chars//4}tok facts={n_facts}", flush=True)
             print(f"     Q: {inst['question'][:80]}", flush=True)
             print(f"     gold: {str(inst['answer'])[:70]!r}", flush=True)
             print(f"     hyp : {hyp[:70]!r}\n", flush=True)

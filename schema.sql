@@ -33,6 +33,33 @@ CREATE TABLE IF NOT EXISTS event_entity_edges (
     PRIMARY KEY (event_id, entity_id)
 );
 
+-- Provenance ledger: one row per extraction run over an event (append-only).
+CREATE TABLE IF NOT EXISTS extractions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id INTEGER NOT NULL REFERENCES events(id),
+    provider TEXT NOT NULL,
+    model TEXT NOT NULL,
+    prompt_version TEXT NOT NULL,
+    extracted_at TEXT NOT NULL
+);
+
+-- Distilled atomic facts: the retrieval unit; time inherited from events(timestamp).
+CREATE TABLE IF NOT EXISTS facts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id INTEGER NOT NULL REFERENCES events(id),
+    extraction_id INTEGER NOT NULL REFERENCES extractions(id),
+    text TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+-- Claim-level entity links (which entities each fact involves), built deterministically.
+CREATE TABLE IF NOT EXISTS fact_entity_edges (
+    fact_id INTEGER NOT NULL REFERENCES facts(id),
+    entity_id INTEGER NOT NULL REFERENCES entities(id),
+    PRIMARY KEY (fact_id, entity_id)
+);
+
 -- =============================================================
 -- DERIVED STATE
 -- =============================================================
@@ -76,6 +103,10 @@ CREATE INDEX IF NOT EXISTS idx_entities_normalized_form ON entities(normalized_f
 CREATE INDEX IF NOT EXISTS idx_entity_aliases_normalized_form ON entity_aliases(normalized_form);
 CREATE INDEX IF NOT EXISTS idx_event_entity_edges_entity_id ON event_entity_edges(entity_id);
 CREATE INDEX IF NOT EXISTS idx_event_thread_edges_thread_id ON event_thread_edges(thread_id);
+CREATE INDEX IF NOT EXISTS idx_facts_event_id ON facts(event_id);
+CREATE INDEX IF NOT EXISTS idx_facts_extraction_id ON facts(extraction_id);
+CREATE INDEX IF NOT EXISTS idx_extractions_event_id ON extractions(event_id);
+CREATE INDEX IF NOT EXISTS idx_fact_entity_edges_entity_id ON fact_entity_edges(entity_id);
 
 -- =============================================================
 -- FULL-TEXT SEARCH
@@ -96,6 +127,22 @@ CREATE TRIGGER IF NOT EXISTS events_fts_delete AFTER DELETE ON events BEGIN
         VALUES('delete', old.id, old.content);
 END;
 
+-- Text door over facts (auto-populated by triggers).
+CREATE VIRTUAL TABLE IF NOT EXISTS facts_fts USING fts5(
+    text,
+    content='facts',
+    content_rowid='id'
+);
+
+CREATE TRIGGER IF NOT EXISTS facts_fts_insert AFTER INSERT ON facts BEGIN
+    INSERT INTO facts_fts(rowid, text) VALUES (new.id, new.text);
+END;
+
+CREATE TRIGGER IF NOT EXISTS facts_fts_delete AFTER DELETE ON facts BEGIN
+    INSERT INTO facts_fts(facts_fts, rowid, text)
+        VALUES('delete', old.id, old.text);
+END;
+
 -- =============================================================
 -- VECTOR SEARCH
 -- =============================================================
@@ -106,6 +153,12 @@ END;
 -- neighbors. Cosine here matches the cosine_similarity used in scoring.
 CREATE VIRTUAL TABLE IF NOT EXISTS event_embeddings USING vec0(
     event_id INTEGER PRIMARY KEY,
+    embedding float[{EMBEDDING_DIMENSIONS}] distance_metric=cosine
+);
+
+-- Semantic door over facts (populated when fact-embedding is wired in).
+CREATE VIRTUAL TABLE IF NOT EXISTS fact_embeddings USING vec0(
+    fact_id INTEGER PRIMARY KEY,
     embedding float[{EMBEDDING_DIMENSIONS}] distance_metric=cosine
 );
 

@@ -904,6 +904,74 @@ def status() -> None:
         conn.close()
 
 
+_SHADOW_SUFFIXES = (
+    "_data", "_idx", "_docsize", "_config", "_content",
+    "_chunks", "_info", "_rowids", "_vector_chunks00",
+)
+
+
+def _is_shadow_table(name: str) -> bool:
+    return name.startswith("sqlite_") or name.endswith(_SHADOW_SUFFIXES)
+
+
+@cli.command()
+def tables() -> None:
+    """List the memory database's tables with row counts."""
+
+    conn = _read_connection()
+    try:
+        rows = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
+        ).fetchall()
+        click.echo(f"{'table':<26}{'rows':>10}")
+        click.echo("-" * 36)
+        for row in rows:
+            name = row["name"]
+            if _is_shadow_table(name):
+                continue
+            try:
+                count = conn.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0]
+            except Exception:
+                count = "-"
+            click.echo(f"{name:<26}{count:>10}")
+    finally:
+        conn.close()
+
+
+@cli.command()
+@click.argument("query")
+def sql(query: str) -> None:
+    """Run a read-only SQL query (SELECT/PRAGMA/EXPLAIN/WITH) against the memory."""
+
+    import sqlite3
+
+    if query.lstrip().lower().split(None, 1)[0] not in ("select", "pragma", "explain", "with"):
+        raise click.UsageError("Only read-only queries (SELECT / PRAGMA / EXPLAIN / WITH) are allowed.")
+
+    conn = _read_connection()
+    try:
+        try:
+            rows = conn.execute(query).fetchall()
+        except sqlite3.OperationalError as exc:
+            raise click.UsageError(str(exc)) from exc
+        if not rows:
+            click.echo("(no rows)")
+            return
+        columns = list(rows[0].keys())
+        click.echo(" | ".join(columns))
+        click.echo("-+-".join("-" * len(c) for c in columns))
+        for row in rows:
+            click.echo(" | ".join(_sql_cell(row[c]) for c in columns))
+        click.echo(f"\n({len(rows)} rows)")
+    finally:
+        conn.close()
+
+
+def _sql_cell(value: object, width: int = 60) -> str:
+    text = "" if value is None else str(value).replace("\n", " ")
+    return text if len(text) <= width else text[: width - 1] + "…"
+
+
 def _read_connection():
     from db import get_connection, init_db
 

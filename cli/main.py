@@ -489,6 +489,107 @@ def process() -> None:
 
 
 @cli.command()
+@click.option("--dry-run", is_flag=True, help="Show what would be captured; write nothing.")
+@click.option("--catch-up", is_flag=True, help="Skip existing history; capture only from now on.")
+@click.option("--once", is_flag=True, help="Capture new turns once and exit (no tailing).")
+@click.option("--distill", is_flag=True, help="Also extract facts (LLM cost); default captures raw only.")
+@click.option("--interval", default=3.0, show_default=True, help="Seconds between polls when tailing.")
+def watch(dry_run: bool, catch_up: bool, once: bool, distill: bool, interval: float) -> None:
+    """Silently capture Claude Code and Codex conversations into memory."""
+
+    import time as _time
+
+    from db import get_connection, init_db
+    from event_intake import ingest_event
+    from transcript_ingest import discover_sources, parse_turns, read_new_lines
+
+    conn = get_connection()
+    init_db(conn)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS ingest_cursors "
+        "(path TEXT PRIMARY KEY, byte_offset INTEGER NOT NULL DEFAULT 0)"
+    )
+    conn.commit()
+
+    if dry_run:
+        total = 0
+        sources = discover_sources()
+        for source in sources:
+            lines, _ = read_new_lines(source.path, 0)
+            turns = parse_turns(source.kind, lines)
+            if turns:
+                click.echo(f"  {len(turns):>5} turns  {source.label}")
+                total += len(turns)
+        click.echo(f"\nWould capture {total} turn(s) across {len(sources)} transcript(s). Nothing written (--dry-run).")
+        conn.close()
+        return
+
+    def _offset(path: str) -> int:
+        row = conn.execute("SELECT byte_offset FROM ingest_cursors WHERE path = ?", (path,)).fetchone()
+        return int(row["byte_offset"]) if row else 0
+
+    def _drain() -> int:
+        captured = 0
+        for source in discover_sources():
+            key = str(source.path)
+            offset = _offset(key)
+            lines, new_offset = read_new_lines(source.path, offset)
+            if new_offset == offset:
+                continue
+            for turn in parse_turns(source.kind, lines):
+                ingest_event(conn, turn.text, source.label, timestamp=turn.timestamp or None)
+                captured += 1
+            conn.execute(
+                "INSERT INTO ingest_cursors (path, byte_offset) VALUES (?, ?) "
+                "ON CONFLICT(path) DO UPDATE SET byte_offset = excluded.byte_offset",
+                (key, new_offset),
+            )
+            conn.commit()
+        return captured
+
+    def _distill() -> None:
+        from pipeline import process_pending_events
+        from providers import get_embedding_model, get_model
+
+        model, embedding_model = get_model(), get_embedding_model()
+        if model is not None:
+            process_pending_events(conn, model, embedding_model)
+
+    if catch_up:
+        for source in discover_sources():
+            conn.execute(
+                "INSERT INTO ingest_cursors (path, byte_offset) VALUES (?, ?) "
+                "ON CONFLICT(path) DO UPDATE SET byte_offset = excluded.byte_offset",
+                (str(source.path), source.path.stat().st_size),
+            )
+        conn.commit()
+        click.echo("Caught up to now — past turns skipped, capturing from here on.")
+    else:
+        captured = _drain()
+        click.echo(f"Captured {captured} new turn(s).")
+        if distill and captured:
+            _distill()
+
+    if once:
+        conn.close()
+        return
+
+    click.echo(f"Watching for new turns every {interval:g}s… (Ctrl-C to stop)")
+    try:
+        while True:
+            _time.sleep(interval)
+            new = _drain()
+            if new:
+                click.echo(f"  +{new} turn(s)")
+                if distill:
+                    _distill()
+    except KeyboardInterrupt:
+        click.echo("\nStopped.")
+    finally:
+        conn.close()
+
+
+@cli.command()
 @click.argument("question")
 @click.option("--json", "as_json", is_flag=True, help="Print raw structured facts.")
 @click.option("--limit", default=None, type=int, help="Maximum facts to return.")
@@ -630,7 +731,7 @@ def _windowed_command(
 
 @cli.group("list")
 def list_group() -> None:
-    """List stored events or threads."""
+    """List stored events."""
 
 
 @list_group.command("events")
@@ -688,67 +789,9 @@ def list_events(
         conn.close()
 
 
-@list_group.command("threads")
-@click.option("--since", default=None, help="Only threads with an event at/after this ISO date.")
-@click.option("--until", default=None, help="Only threads with an event at/before this ISO date.")
-@click.option("--limit", default=20, help="Number of threads to show.")
-def list_threads(since: str | None, until: str | None, limit: int) -> None:
-    """Show thread summaries."""
-
-    from time_bounds import normalize_time_window
-
-    try:
-        start_bound, end_bound = normalize_time_window(since, until)
-    except ValueError as exc:
-        raise click.UsageError(str(exc)) from exc
-
-    event_clauses: list[str] = []
-    params: list[object] = []
-    if start_bound is not None:
-        event_clauses.append("e.timestamp >= ?")
-        params.append(start_bound)
-    if end_bound is not None:
-        event_clauses.append("e.timestamp <= ?")
-        params.append(end_bound)
-    if event_clauses:
-        where = (
-            "WHERE EXISTS ("
-            "SELECT 1 FROM event_thread_edges ete2 "
-            "JOIN events e ON e.id = ete2.event_id "
-            f"WHERE ete2.thread_id = t.id AND {' AND '.join(event_clauses)}"
-            ") "
-        )
-    else:
-        where = ""
-    params.append(max(limit, 0))
-
-    conn = _read_connection()
-    try:
-        rows = conn.execute(
-            "SELECT t.id, t.title, t.summary, t.created_at, t.updated_at, "
-            "COUNT(ete.event_id) as event_count "
-            "FROM threads t "
-            "LEFT JOIN event_thread_edges ete ON t.id = ete.thread_id "
-            f"{where}"
-            "GROUP BY t.id "
-            "ORDER BY t.updated_at DESC, t.id DESC LIMIT ?",
-            params,
-        ).fetchall()
-        if not rows:
-            click.echo("No threads found.")
-            return
-        for row in rows:
-            click.echo(
-                f"{row['id']:>5} | {(row['title'] or '(untitled)'):<50} | "
-                f"{row['event_count']} events | {row['updated_at'][:19]}"
-            )
-    finally:
-        conn.close()
-
-
 @cli.group("show")
 def show_group() -> None:
-    """Show details for an event or thread."""
+    """Show details for an event."""
 
 
 @show_group.command("event")
@@ -764,107 +807,21 @@ def show_event(event_id: int) -> None:
             sys.exit(1)
 
         entities = conn.execute(
-            "SELECT en.canonical_name "
-            "FROM event_entity_edges ee "
-            "JOIN entities en ON ee.entity_id = en.id "
-            "WHERE ee.event_id = ? "
+            "SELECT DISTINCT en.canonical_name "
+            "FROM facts f "
+            "JOIN fact_entity_edges fe ON fe.fact_id = f.id "
+            "JOIN entities en ON fe.entity_id = en.id "
+            "WHERE f.event_id = ? "
             "ORDER BY en.canonical_name",
             (event_id,),
         ).fetchall()
-        thread = conn.execute(
-            "SELECT thread_id FROM event_thread_edges WHERE event_id = ?",
-            (event_id,),
-        ).fetchone()
         click.echo(f"Event #{event['id']}")
         click.echo(f"  Source:   {event['source']}")
         click.echo(f"  Time:     {event['timestamp']}")
         click.echo(f"  Status:   {event['extraction_status']}")
-        click.echo(f"  Thread:   {thread['thread_id'] if thread else '(unassigned)'}")
         click.echo(f"  Entities: {', '.join(row['canonical_name'] for row in entities)}")
         click.echo("")
         click.echo(event["content"])
-    finally:
-        conn.close()
-
-
-@show_group.command("thread")
-@click.argument("thread_id", type=int)
-def show_thread(thread_id: int) -> None:
-    """Show a thread with all events in chronological order."""
-
-    conn = _read_connection()
-    try:
-        thread = conn.execute("SELECT * FROM threads WHERE id = ?", (thread_id,)).fetchone()
-        if thread is None:
-            click.echo(f"Thread {thread_id} not found.", err=True)
-            sys.exit(1)
-        click.echo(f"Thread #{thread['id']}: {thread['title'] or '(untitled)'}")
-        click.echo(thread["summary"])
-        rows = conn.execute(
-            "SELECT e.id, e.timestamp, e.source, e.content "
-            "FROM events e "
-            "JOIN event_thread_edges ete ON e.id = ete.event_id "
-            "WHERE ete.thread_id = ? "
-            "ORDER BY e.timestamp ASC",
-            (thread_id,),
-        ).fetchall()
-        for row in rows:
-            click.echo("")
-            click.echo(f"[{row['id']}] {row['timestamp']} ({row['source']})")
-            click.echo(row["content"])
-    finally:
-        conn.close()
-
-
-@cli.command("rebuild-threads")
-def rebuild_threads() -> None:
-    """Clear derived thread state and recompute from source of truth."""
-
-    conn, model, _embedding_model = _get_resources()
-    try:
-        from db import transactional
-        from thread_assigner import assign_thread
-        from thread_summarizer import summarize_thread
-        from meniscus_types import ExtractionStatus
-
-        with transactional(conn) as txn:
-            txn.execute("DELETE FROM assignment_log")
-            txn.execute("DELETE FROM event_thread_edges")
-            txn.execute("DELETE FROM threads")
-
-        events = conn.execute(
-            "SELECT id FROM events WHERE extraction_status = ? ORDER BY timestamp ASC",
-            (ExtractionStatus.COMPLETED,),
-        ).fetchall()
-        if not events:
-            click.echo(
-                "Nothing to rebuild — no processed events yet. "
-                "Add and process some notes first."
-            )
-            return
-
-        affected: set[int] = set()
-        for row in events:
-            event_id = int(row["id"])
-            entity_rows = conn.execute(
-                "SELECT entity_id FROM event_entity_edges WHERE event_id = ?",
-                (event_id,),
-            ).fetchall()
-            entity_ids = [int(r["entity_id"]) for r in entity_rows]
-            with transactional(conn) as txn:
-                affected.add(assign_thread(txn, event_id, entity_ids))
-
-        summary = f"Rebuilt {len(affected)} thread(s) from {len(events)} event(s)."
-        if model is None:
-            # Reassignment is deterministic and done; titles/summaries need a model.
-            click.echo(
-                summary + " Titles and summaries skipped — no model configured; "
-                "run `men rebuild-threads` again with a model to regenerate them."
-            )
-        else:
-            for thread_id in sorted(affected):
-                summarize_thread(conn, thread_id, model)
-            click.echo(summary)
     finally:
         conn.close()
 

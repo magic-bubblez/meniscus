@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from models import ExtractedEntity, ExtractionResult, ThreadSummary
+from models import ExtractedEntity, ExtractionResult
 from pipeline import ingest_and_process, process_pending_events
 
 
@@ -11,8 +11,6 @@ class FakeModel:
                 entities=[ExtractedEntity(name="python")],
                 facts=["The person is learning Python."],
             )
-        if response_model is ThreadSummary:
-            return ThreadSummary(title="Python work", summary="Worked on Python.")
         raise AssertionError(response_model)
 
 
@@ -28,8 +26,6 @@ def test_ingest_and_process_without_embeddings(conn):
     assert len(event_ids) == 1
     event = conn.execute("SELECT extraction_status FROM events").fetchone()
     assert event["extraction_status"] == "completed"
-    # threads are dormant now; grouping happens at read time over facts
-    assert conn.execute("SELECT COUNT(*) FROM event_thread_edges").fetchone()[0] == 0
 
     facts = conn.execute("SELECT id, text FROM facts").fetchall()
     assert [f["text"] for f in facts] == ["The person is learning Python."]
@@ -70,7 +66,6 @@ def test_ingest_and_process_no_model_saves_pending(conn):
         "SELECT extraction_status FROM events WHERE id = ?", (event_ids[0],)
     ).fetchone()
     assert row["extraction_status"] == "pending"
-    assert conn.execute("SELECT COUNT(*) FROM event_thread_edges").fetchone()[0] == 0
 
 
 def test_process_pending_events_no_model_is_noop(conn):

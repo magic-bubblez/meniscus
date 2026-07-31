@@ -44,11 +44,6 @@ def reconcile_entities(
             entity_id = int(cursor.lastrowid)
 
         _insert_aliases(conn, entity_id, extracted.aliases)
-        conn.execute(
-            "INSERT OR IGNORE INTO event_entity_edges (event_id, entity_id) "
-            "VALUES (?, ?)",
-            (event_id, entity_id),
-        )
 
         if entity_id not in entity_ids:
             entity_ids.append(entity_id)

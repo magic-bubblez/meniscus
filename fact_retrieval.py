@@ -13,7 +13,6 @@ from datetime import datetime, timedelta
 import config
 from embedding_interface import EmbeddingInterface
 from exceptions import ModelUnavailableError
-from thread_assigner import cosine_similarity
 from time_bounds import normalize_time_window
 from tokens import estimate_tokens
 from vocab_reconciliation import normalize
@@ -22,6 +21,17 @@ logger = logging.getLogger(__name__)
 
 _FTS_TOKEN_RE = re.compile(r"\w+")
 _VECTOR_MAX_K = 500
+
+
+def cosine_similarity(vec_a: list[float], vec_b: list[float]) -> float:
+    """Compute cosine similarity between two equal-length vectors."""
+
+    dot = sum(a * b for a, b in zip(vec_a, vec_b))
+    mag_a = math.sqrt(sum(a * a for a in vec_a))
+    mag_b = math.sqrt(sum(b * b for b in vec_b))
+    if mag_a == 0.0 or mag_b == 0.0:
+        return 0.0
+    return dot / (mag_a * mag_b)
 
 KIND_FACT: str = "fact"
 KIND_EVENT: str = "event"

@@ -32,13 +32,11 @@ from providers import get_embedding_model, get_model  # noqa: E402
 import db as _db  # noqa: E402
 import providers as _p  # noqa: E402
 import providers.local_embedding as _le  # noqa: E402
-import thread_assigner as _ta  # noqa: E402
 
 _db.EMBEDDING_PROVIDER = "local"
 _db.EMBEDDING_DIMENSIONS = 768
 _p.EMBEDDING_PROVIDER = "local"
 _p.EMBEDDING_DIMENSIONS = 768
-_ta.EMBEDDING_PROVIDER = "local"
 _le.EMBEDDING_DIMENSIONS = 768
 
 MEM_DIR = ROOT / "bench" / "memories"
@@ -147,16 +145,14 @@ def freeze(dataset_path: str, count: int, shard_index: int = 0, shard_count: int
     print(f"freezing {len(indices)} instances into {MEM_DIR}", flush=True)
     print(f"  stratified across types: {types}", flush=True)
 
-    # MENISCUS_PROVIDER overrides the LLM provider per worker (falls back to config).
-    provider = os.environ.get("MENISCUS_PROVIDER") or None
-    model, embedding_model = get_model(provider), get_embedding_model()
-    provider_label = provider or _cfg.DEFAULT_MODEL_PROVIDER
-    model_slug = {
-        "openrouter": _cfg.OPENROUTER_MODEL,
-        "gemini": _cfg.GEMINI_MODEL,
-        "anthropic": _cfg.ANTHROPIC_MODEL,
-        "ollama": _cfg.OLLAMA_MODEL,
-    }.get(provider_label, provider_label)
+    _override = os.environ.get("MENISCUS_FREEZE_MODEL")
+    if _override:
+        from providers.openrouter import OpenRouterProvider
+        model, model_slug = OpenRouterProvider(model=_override), _override
+    else:
+        model, model_slug = get_model(), _cfg.OPENROUTER_MODEL
+    embedding_model = get_embedding_model()
+    provider_label = _cfg.DEFAULT_MODEL_PROVIDER
     budget = _cfg.MAX_RUN_COST_USD
     spent = 0.0
     print(f"llm provider: {provider_label} | model {model_slug} | budget ${budget:.2f}", flush=True)

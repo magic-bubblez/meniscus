@@ -21,34 +21,10 @@ def _register_embedding(name: str, factory: Callable[[], EmbeddingInterface]) ->
     _EMBEDDING_REGISTRY[name] = factory
 
 
-def _make_gemini_llm() -> ModelInterface:
-    from providers.gemini import GeminiProvider
-
-    return GeminiProvider()
-
-
 def _make_openrouter_llm() -> ModelInterface:
     from providers.openrouter import OpenRouterProvider
 
     return OpenRouterProvider()
-
-
-def _make_ollama_llm() -> ModelInterface:
-    from providers.ollama import OllamaProvider
-
-    return OllamaProvider()
-
-
-def _make_anthropic_llm() -> ModelInterface:
-    from providers.claude import AnthropicProvider
-
-    return AnthropicProvider()
-
-
-def _make_gemini_embedding() -> EmbeddingInterface:
-    from providers.gemini_embedding import GeminiEmbeddingProvider
-
-    return GeminiEmbeddingProvider()
 
 
 def _make_local_embedding() -> EmbeddingInterface:
@@ -57,11 +33,7 @@ def _make_local_embedding() -> EmbeddingInterface:
     return LocalEmbeddingProvider()
 
 
-_register_llm("gemini", _make_gemini_llm)
 _register_llm("openrouter", _make_openrouter_llm)
-_register_llm("ollama", _make_ollama_llm)
-_register_llm("anthropic", _make_anthropic_llm)
-_register_embedding("gemini", _make_gemini_embedding)
 _register_embedding("local", _make_local_embedding)
 
 

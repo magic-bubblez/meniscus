@@ -28,18 +28,8 @@ def _open_cli_db(tmp_path, monkeypatch):
     return path, conn
 
 
-def _insert_thread(conn, title, created_at, updated_at):
+def _insert_event(conn, content, timestamp, source="test"):
     return int(
-        conn.execute(
-            "INSERT INTO threads (title, summary, created_at, updated_at) "
-            "VALUES (?, '', ?, ?)",
-            (title, created_at, updated_at),
-        ).lastrowid
-    )
-
-
-def _insert_event(conn, content, timestamp, source="test", thread_id=None):
-    event_id = int(
         conn.execute(
             "INSERT INTO events "
             "(source, content, timestamp, extraction_status, content_hash) "
@@ -47,12 +37,6 @@ def _insert_event(conn, content, timestamp, source="test", thread_id=None):
             (source, content, timestamp, f"{source}:{content}:{timestamp}"),
         ).lastrowid
     )
-    if thread_id is not None:
-        conn.execute(
-            "INSERT INTO event_thread_edges (event_id, thread_id) VALUES (?, ?)",
-            (event_id, thread_id),
-        )
-    return event_id
 
 
 def _insert_fact(conn, event_id, text, entities):
@@ -118,53 +102,6 @@ def test_list_events_filters_compose_and_date_end_is_inclusive(tmp_path, monkeyp
     assert "late target" in result.output
     assert "previous day" not in result.output
     assert "wrong source" not in result.output
-
-
-def test_list_threads_uses_any_event_in_window(tmp_path, monkeypatch):
-    path, conn = _open_cli_db(tmp_path, monkeypatch)
-    touched_thread = _insert_thread(
-        conn,
-        "Touched in window",
-        "2026-01-01T00:00:00+00:00",
-        "2026-02-01T00:00:00+00:00",
-    )
-    outside_thread = _insert_thread(
-        conn,
-        "Outside",
-        "2026-02-01T00:00:00+00:00",
-        "2026-02-01T00:00:00+00:00",
-    )
-    _insert_event(
-        conn,
-        "inside historical slice",
-        "2026-01-15T12:00:00+00:00",
-        thread_id=touched_thread,
-    )
-    _insert_event(
-        conn,
-        "outside historical slice",
-        "2026-02-01T12:00:00+00:00",
-        thread_id=outside_thread,
-    )
-    conn.commit()
-    conn.close()
-
-    result = CliRunner().invoke(
-        cli,
-        [
-            "list",
-            "threads",
-            "--since",
-            "2026-01-15",
-            "--until",
-            "2026-01-15",
-        ],
-        env={"MENISCUS_DB_PATH": str(path)},
-    )
-
-    assert result.exit_code == 0
-    assert "Touched in window" in result.output
-    assert "Outside" not in result.output
 
 
 def test_ask_unanswered_appends_deterministic_guidance(tmp_path, monkeypatch):

@@ -13,12 +13,10 @@ from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv()
 
-# Benchmark config override: LOCAL embeddings (bge-base, 768d) so we don't hit
-# the Gemini embedding free-tier cap (100/min) when bulk-ingesting histories.
-# Patch config BEFORE importing modules that bind these names.
+
 import config as _cfg
 _cfg.EMBEDDING_PROVIDER = "local"
-_cfg.EMBEDDING_DIMENSIONS = 768
+_cfg.EMBEDDING_DIMENSIONS = 384
 
 from db import get_connection, init_db
 from event_intake import ingest_event
@@ -28,10 +26,10 @@ import fact_retrieval as fr
 from cli.main import SYNTHESIS_PROMPT_TEMPLATE, AskAnswer
 
 # Belt-and-suspenders: re-patch the names each module bound at import time.
-import db as _db; _db.EMBEDDING_PROVIDER = "local"; _db.EMBEDDING_DIMENSIONS = 768
-import providers as _p; _p.EMBEDDING_PROVIDER = "local"; _p.EMBEDDING_DIMENSIONS = 768
+import db as _db; _db.EMBEDDING_PROVIDER = "local"; _db.EMBEDDING_DIMENSIONS = 384
+import providers as _p; _p.EMBEDDING_PROVIDER = "local"; _p.EMBEDDING_DIMENSIONS = 384
 import thread_assigner as _ta; _ta.EMBEDDING_PROVIDER = "local"
-import providers.local_embedding as _le; _le.EMBEDDING_DIMENSIONS = 768
+import providers.local_embedding as _le; _le.EMBEDDING_DIMENSIONS = 384
 
 
 def parse_ts(s: str) -> datetime:

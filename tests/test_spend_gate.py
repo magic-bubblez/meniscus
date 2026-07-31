@@ -9,7 +9,7 @@ from exceptions import SpendCeilingError
 from models import ExtractedEntity, ExtractionResult
 from pipeline import process_pending_events
 
-MODEL = "anthropic/claude-haiku-4.5"
+MODEL = "deepseek/deepseek-v4-flash"
 
 _ITEMS = [
     ("cli", "learning about python generators", "2026-01-01T00:00:00+00:00"),

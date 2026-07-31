@@ -34,9 +34,6 @@ def test_reconcile_creates_new_entity_and_edge(conn):
     assert len(entity_ids) == 1
     entity = conn.execute("SELECT * FROM entities").fetchone()
     assert entity["canonical_name"] == "linked list"
-    edge = conn.execute("SELECT * FROM event_entity_edges").fetchone()
-    assert edge["event_id"] == event_id
-    assert edge["entity_id"] == entity_ids[0]
     alias = conn.execute("SELECT * FROM entity_aliases").fetchone()
     assert alias["normalized_form"] == "list node"
 
@@ -91,7 +88,6 @@ def test_reconcile_deduplicates_returned_ids(conn):
     entity_ids = reconcile_entities(conn, event_id, result)
 
     assert entity_ids == [1]
-    assert conn.execute("SELECT COUNT(*) FROM event_entity_edges").fetchone()[0] == 1
 
 
 def test_reconcile_skips_empty_normalized_entity(conn):

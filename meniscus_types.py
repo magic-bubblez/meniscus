@@ -10,10 +10,3 @@ class ExtractionStatus(StrEnum):
 
     PENDING = "pending"
     COMPLETED = "completed"
-
-
-class DecisionType(StrEnum):
-    """Thread assignment decision type."""
-
-    EXISTING_THREAD = "existing_thread"
-    NEW_THREAD = "new_thread"

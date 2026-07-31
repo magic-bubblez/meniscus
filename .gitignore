@@ -8,6 +8,8 @@ bench/out/
 bench/memories*/
 bench/*.log
 DESIGN.md
+/Users/bubbles/Desktop/meniscus/LEARNING_CONCEPTS.md
+/Users/bubbles/Desktop/meniscus/PRODUCT_PLAN.md
 SESSION_NOTES.md
 tests/__pycache__/
 providers/__pycache__/
@@ -24,3 +26,4 @@ venv/
 .pytest_cache/
 .DS_Store
 *.egg-info/
+.mcp.json

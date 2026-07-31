@@ -1,12 +1,4 @@
-"""End-to-end user-workflow test — every command, as a user would run it.
-
-Real Gemini needs a live key/quota, so this uses a stand-in model to document
-and LOCK the full journey: add -> (auto-process) -> entities + threads form ->
-status -> list -> show -> ask -> process -> duplicate -> rebuild.
-
-If this passes, the machinery works; a real-world failure then localizes to the
-live model/API, not the pipeline.
-"""
+"""End-to-end user-workflow test — every command, as a user would run it."""
 
 from __future__ import annotations
 
@@ -16,9 +8,8 @@ from click.testing import CliRunner
 import config as config_mod
 import db as db_mod
 import providers as providers_mod
-import thread_assigner as thread_assigner_mod
 from cli.main import AskAnswer, RetrievalParams, cli
-from models import ExtractedEntity, ExtractionResult, ThreadSummary
+from models import ExtractedEntity, ExtractionResult
 
 _KEYWORDS = ["jwt", "auth", "token", "refresh", "groceries", "store"]
 
@@ -40,8 +31,6 @@ class WorkflowModel:
                 entities=entities or [ExtractedEntity(name="note", aliases=[])],
                 facts=[content.strip() or "a note"],
             )
-        if name == "ThreadSummary":
-            return ThreadSummary(title="A work session", summary="Some work happened.")
         if name == "RetrievalParams":
             return RetrievalParams(text="jwt")
         if name == "AskAnswer":
@@ -53,7 +42,7 @@ class WorkflowModel:
 def runner(tmp_path, monkeypatch):
     monkeypatch.setenv("MENISCUS_DB_PATH", str(tmp_path / "workflow.db"))
     # Run in disabled-embeddings mode so no sqlite-vec / API key is needed.
-    for module in (config_mod, db_mod, providers_mod, thread_assigner_mod):
+    for module in (config_mod, db_mod, providers_mod):
         monkeypatch.setattr(module, "EMBEDDING_PROVIDER", "none", raising=False)
     monkeypatch.setattr(providers_mod, "get_model", lambda *a, **k: WorkflowModel())
     monkeypatch.setattr(providers_mod, "get_embedding_model", lambda *a, **k: None)
@@ -99,7 +88,3 @@ def test_full_user_journey(runner):
     assert "duplicate" in _run(
         runner, "add", "learning about jwt auth refresh tokens"
     ).lower()
-
-    # 8. Dormant thread grouping can still be rebuilt for a comparison run.
-    rebuilt = _run(runner, "rebuild-threads")
-    assert "rebuilt" in rebuilt.lower() and "3 event(s)" in rebuilt.lower()

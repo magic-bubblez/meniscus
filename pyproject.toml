@@ -14,9 +14,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-gemini = [
-    "google-genai>=1.0",
-]
 local-embedding = [
     "sentence-transformers>=2.0",
 ]
@@ -31,7 +28,7 @@ mcp = [
     "mcp[cli]>=1.27,<2",
 ]
 all = [
-    "meniscus[gemini,local-embedding,api,vec,mcp]",
+    "meniscus[local-embedding,api,vec,mcp]",
 ]
 dev = [
     "pytest>=7.0",

@@ -17,10 +17,3 @@ class ExtractionResult(BaseModel):
 
     entities: list[ExtractedEntity]
     facts: list[str] = Field(default_factory=list)
-
-
-class ThreadSummary(BaseModel):
-    """Thread summarization response shape."""
-
-    title: str
-    summary: str

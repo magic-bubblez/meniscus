@@ -7,12 +7,7 @@ def test_all_config_constants_exist():
     names = [
         "ENTITY_CAP",
         "CHUNK_SIZE_WORDS",
-        "HALF_LIFE_HOURS",
-        "ASSIGNMENT_THRESHOLD",
-        "TOPICAL_FLOOR",
-        "TEMPORAL_FLOOR",
         "VECTOR_CANDIDATE_K",
-        "ALGORITHM_VERSION",
         "EMBEDDING_PROVIDER",
         "EMBEDDING_DIMENSIONS",
         "HYBRID_ALPHA",
@@ -26,7 +21,6 @@ def test_all_config_constants_exist():
 def test_config_value_ranges():
     assert config.ENTITY_CAP > 0
     assert config.CHUNK_SIZE_WORDS > 0
-    assert config.HALF_LIFE_HOURS > 0
     assert config.VECTOR_CANDIDATE_K > 0
     assert config.EMBEDDING_DIMENSIONS > 0
     assert 0 <= config.HYBRID_ALPHA <= 1

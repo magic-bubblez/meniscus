@@ -131,8 +131,7 @@ def _validate_or_record_embedding_dimensions(conn: sqlite3.Connection) -> None:
         raise EmbeddingDimensionMismatchError(
             "Embedding dimension mismatch: config "
             f"EMBEDDING_DIMENSIONS={EMBEDDING_DIMENSIONS} but database was "
-            f"created with {stored}. Recreate the database and run "
-            "`men rebuild-threads`."
+            f"created with {stored}. Recreate the database."
         )
 
 

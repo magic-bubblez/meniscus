@@ -1,4 +1,4 @@
-"""Pipeline orchestration across intake, semantic processing, and threading."""
+"""Pipeline orchestration across intake and fact extraction."""
 
 from __future__ import annotations
 
@@ -16,11 +16,9 @@ from db import transactional
 from embedding_interface import EmbeddingInterface
 from entity_extractor import EXTRACTION_PROMPT_VERSION, extract_entities
 from event_intake import ingest_event
-from exceptions import EmbeddingBackendUnavailableError, ModelUnavailableError
+from exceptions import ModelUnavailableError
 from models import ExtractionResult
 from model_interface import ModelInterface
-from thread_assigner import assign_thread
-from thread_summarizer import summarize_thread
 from meniscus_types import ExtractionStatus
 from vocab_reconciliation import reconcile_entities
 
@@ -37,8 +35,13 @@ def process_event(
 
     extraction_result = extract_entities(conn, event_id, model)
     if not extraction_result.facts:
-        logger.warning("Event %s produced no facts; left pending for retry.", event_id)
-        return 0
+        with transactional(conn) as txn:
+            txn.execute(
+                "UPDATE events SET extraction_status = ? WHERE id = ?",
+                (ExtractionStatus.COMPLETED, event_id),
+            )
+        logger.info("Event %s had nothing to extract; marked completed.", event_id)
+        return event_id
 
     with transactional(conn) as txn:
         entity_ids = reconcile_entities(txn, event_id, extraction_result)
@@ -50,63 +53,7 @@ def process_event(
         )
 
     _embed_facts(conn, fact_rows, embedding_model)
-
-    # DORMANT: raw-event embedding + thread grouping + summarization.
     return event_id
-
-
-def _compute_embedding(
-    conn: sqlite3.Connection,
-    event_id: int,
-    embedding_model: EmbeddingInterface | None,
-) -> list[float] | None:
-    if embedding_model is None:
-        return None
-
-    event_row = conn.execute(
-        "SELECT content FROM events WHERE id = ?",
-        (event_id,),
-    ).fetchone()
-    if event_row is None:
-        raise ValueError(f"Event {event_id} not found")
-
-    try:
-        return embedding_model.embed(event_row["content"])
-    except ModelUnavailableError:
-        logger.warning(
-            "Embedding unavailable for event %s; proceeding unembedded "
-            "(pure containment). Event has no vector until re-embedded.",
-            event_id,
-        )
-        return None
-
-
-def _vec0_available(conn: sqlite3.Connection) -> bool:
-    row = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'event_embeddings'"
-    ).fetchone()
-    return row is not None
-
-
-def _store_embedding(
-    conn: sqlite3.Connection,
-    event_id: int,
-    embedding: list[float],
-) -> None:
-    """Store an embedding; raise if vector backend is absent."""
-
-    if not _vec0_available(conn):
-        raise EmbeddingBackendUnavailableError(
-            "Cannot store embedding because event_embeddings vec0 table is absent. "
-            "This should only happen when embeddings are disabled, in which case "
-            "_store_embedding must not be called."
-        )
-
-    blob = struct.pack(f"{len(embedding)}f", *embedding)
-    conn.execute(
-        "INSERT INTO event_embeddings (event_id, embedding) VALUES (?, ?)",
-        (event_id, blob),
-    )
 
 
 def _extraction_provenance() -> tuple[str, str]:
@@ -114,14 +61,7 @@ def _extraction_provenance() -> tuple[str, str]:
 
     import config
 
-    provider = os.environ.get("MENISCUS_PROVIDER") or config.DEFAULT_MODEL_PROVIDER
-    model = {
-        "openrouter": config.OPENROUTER_MODEL,
-        "gemini": config.GEMINI_MODEL,
-        "anthropic": config.ANTHROPIC_MODEL,
-        "ollama": config.OLLAMA_MODEL,
-    }.get(provider, provider)
-    return provider, model
+    return config.DEFAULT_MODEL_PROVIDER, config.OPENROUTER_MODEL
 
 
 def _store_facts(
@@ -385,7 +325,15 @@ def _process_events_batch(
                 continue
             result = extractions[eid]
             if not result.facts:
-                logger.warning("Event %s produced no facts; left pending for retry.", eid)
+                with transactional(conn) as txn:
+                    txn.execute(
+                        "UPDATE events SET extraction_status = ? WHERE id = ?",
+                        (ExtractionStatus.COMPLETED, eid),
+                    )
+                processed_ids.append(eid)
+                if on_progress is not None:
+                    on_progress(len(processed_ids), total)
+                logger.info("Event %s had nothing to extract; marked completed.", eid)
                 continue
             with transactional(conn) as txn:
                 entity_ids = reconcile_entities(txn, eid, result)
@@ -403,7 +351,6 @@ def _process_events_batch(
         # --- Phase C: batched fact embeddings ---
         _embed_facts(conn, window_fact_rows, embedding_model)
 
-    # DORMANT: raw-event embedding + thread grouping + summarization.
     return processed_ids
 
 
@@ -442,14 +389,3 @@ def _extract_with_retry(source: str, content: str, timestamp: str, model: ModelI
 
 def _embed_batch_with_retry(embedding_model: EmbeddingInterface, texts: list[str]):
     return _ratelimit_retry(lambda: embedding_model.embed_batch(texts))
-
-
-def _summarize_with_retry(
-    events_text: str, first_content: str, model: ModelInterface
-) -> tuple[str, str]:
-    import thread_summarizer as summarizer
-
-    try:
-        return _ratelimit_retry(lambda: summarizer.summarize_from_text(events_text, model))
-    except ModelUnavailableError:
-        return summarizer.deterministic_title(first_content), ""

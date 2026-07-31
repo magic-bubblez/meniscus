@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from models import ExtractedEntity, ExtractionResult, ThreadSummary
+from models import ExtractedEntity, ExtractionResult
 
 
 def test_extracted_entity_defaults():
@@ -21,13 +21,6 @@ def test_extraction_result_from_json():
         '{"entities": [{"name": "python", "aliases": ["py"]}]}'
     )
     assert result.entities[0].name == "python"
-
-
-def test_thread_summary_from_json():
-    summary = ThreadSummary.model_validate_json(
-        '{"title": "Debug JWT", "summary": "Worked on JWT refresh."}'
-    )
-    assert summary.title == "Debug JWT"
 
 
 def test_extraction_result_missing_entities_field():

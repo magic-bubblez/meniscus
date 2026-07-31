@@ -1,0 +1,9 @@
+{
+  "name": "meniscus",
+  "displayName": "Meniscus Memory",
+  "version": "1.0.0",
+  "description": "Local, inspectable, append-only memory: distilled facts from what you record, retrieved deterministically. Adds meniscus_recall (read) and meniscus_log (write).",
+  "author": {"name": "Bubbles"},
+  "keywords": ["memory", "mcp", "local-first", "recall"],
+  "mcpServers": "./.mcp.json"
+}

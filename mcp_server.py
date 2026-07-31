@@ -8,6 +8,7 @@ import re
 import threading
 import time
 from dataclasses import asdict
+from pathlib import Path
 
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
@@ -19,7 +20,7 @@ logger = logging.getLogger(__name__)
 # Background processor drains pending events so logging never blocks on LLM calls.
 _POLL_SECONDS = 3.0
 
-load_dotenv()
+load_dotenv(Path(__file__).with_name(".env"))
 
 MCP_INSTRUCTIONS = """\
 Meniscus is this person's private, long-term memory -- a structured record of

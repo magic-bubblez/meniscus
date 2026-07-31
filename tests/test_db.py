@@ -48,11 +48,10 @@ def test_init_db_creates_all_tables(conn):
         "events",
         "entities",
         "entity_aliases",
-        "event_entity_edges",
-        "threads",
-        "event_thread_edges",
-        "assignment_log",
-        "events_fts",
+        "extractions",
+        "facts",
+        "fact_entity_edges",
+        "facts_fts",
         "meta",
     }
     rows = conn.execute(
@@ -72,8 +71,8 @@ def test_init_db_creates_all_indexes(conn):
         "idx_events_source_id",
         "idx_entities_normalized_form",
         "idx_entity_aliases_normalized_form",
-        "idx_event_entity_edges_entity_id",
-        "idx_event_thread_edges_thread_id",
+        "idx_facts_event_id",
+        "idx_fact_entity_edges_entity_id",
     } <= names
 
 
@@ -81,29 +80,6 @@ def test_init_db_idempotent(conn):
     db.init_db(conn)
     count = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
     assert count == 0
-
-
-def test_init_db_fts_trigger_fires_on_insert(conn):
-    conn.execute(
-        "INSERT INTO events (source, content, timestamp, content_hash) "
-        "VALUES ('test', 'linked lists', '2026-01-01T00:00:00+00:00', 'hash-fts')"
-    )
-    row = conn.execute(
-        "SELECT rowid FROM events_fts WHERE events_fts MATCH 'linked'"
-    ).fetchone()
-    assert row is not None
-
-
-def test_init_db_fts_trigger_fires_on_delete(conn):
-    conn.execute(
-        "INSERT INTO events (source, content, timestamp, content_hash) "
-        "VALUES ('test', 'delete marker', '2026-01-01T00:00:00+00:00', 'hash-delete')"
-    )
-    conn.execute("DELETE FROM events WHERE content_hash = 'hash-delete'")
-    row = conn.execute(
-        "SELECT rowid FROM events_fts WHERE events_fts MATCH 'marker'"
-    ).fetchone()
-    assert row is None
 
 
 def test_transactional_commits_on_success(conn):
@@ -138,24 +114,6 @@ def test_unique_constraints(conn):
         )
 
 
-def test_event_thread_edges_single_membership(conn):
-    conn.execute(
-        "INSERT INTO events (source, content, timestamp, content_hash) "
-        "VALUES ('test', 'a', '2026-01-01T00:00:00+00:00', 'event')"
-    )
-    conn.execute(
-        "INSERT INTO threads (created_at, updated_at) "
-        "VALUES ('2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00')"
-    )
-    conn.execute(
-        "INSERT INTO threads (created_at, updated_at) "
-        "VALUES ('2026-01-02T00:00:00+00:00', '2026-01-02T00:00:00+00:00')"
-    )
-    conn.execute("INSERT INTO event_thread_edges (event_id, thread_id) VALUES (1, 1)")
-    with pytest.raises(sqlite3.IntegrityError):
-        conn.execute("INSERT INTO event_thread_edges (event_id, thread_id) VALUES (1, 2)")
-
-
 def test_init_db_records_configured_dimension(conn):
     row = conn.execute(
         "SELECT value FROM meta WHERE key = 'embedding_dimensions'"
@@ -184,7 +142,7 @@ def test_init_db_raises_when_provider_configured_and_sqlite_vec_missing(
 ):
     import sys
 
-    monkeypatch.setattr(db, "EMBEDDING_PROVIDER", "gemini")
+    monkeypatch.setattr(db, "EMBEDDING_PROVIDER", "local")
     # Genuinely simulate a missing extension: make `import sqlite_vec` fail.
     monkeypatch.setitem(sys.modules, "sqlite_vec", None)
     conn = db.get_connection(db_path)
@@ -197,6 +155,6 @@ def test_init_db_raises_when_provider_configured_and_sqlite_vec_missing(
 
 def test_init_db_skips_vec0_when_provider_none(conn):
     row = conn.execute(
-        "SELECT name FROM sqlite_master WHERE name = 'event_embeddings'"
+        "SELECT name FROM sqlite_master WHERE name = 'fact_embeddings'"
     ).fetchone()
     assert row is None

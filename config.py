@@ -49,9 +49,6 @@ IMPORT_WINDOW: int = 500
 IMPORT_RATELIMIT_RETRIES: int = 4
 MAX_RUN_COST_USD: float = 31.00
 MODEL_PRICES_USD_PER_MTOK: dict[str, tuple[float, float]] = {
-    "anthropic/claude-haiku-4.5": (1.0, 5.0),
-    "claude-haiku-4-5": (1.0, 5.0),
-    "google/gemini-3.6-flash": (1.5, 7.5),
     "google/gemini-3.5-flash-lite": (0.30, 2.50),
 }
 DEFAULT_PRICE_USD_PER_MTOK: tuple[float, float] = (1.0, 5.0)

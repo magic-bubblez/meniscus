@@ -34,7 +34,7 @@ ENUMERATION_TRIGGERS: frozenset[str] = frozenset(
 SOURCE_COLLAPSE: bool = True
 
 # Retrieval -- read-time neighbour gathering (opt-in)
-NEIGHBOUR_ENABLED: bool = False
+NEIGHBOUR_ENABLED: bool = True
 NEIGHBOUR_CUT_RULE: str = "ratio"
 NEIGHBOUR_CUT_RATIO: float = 0.75
 NEIGHBOUR_MAX: int = 20

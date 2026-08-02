@@ -67,8 +67,8 @@ Measured on [LongMemEval-S](https://arxiv.org/abs/2410.10813), a standard long-t
 
 | | Meniscus |
 |---|---|
-| Retrieval recall | **0.94** |
-| Context reduction | **98.9%** (feeds ~1% of the full history) |
+| Retrieval recall | **0.89** |
+| Context reduction | **99.1%** (feeds ~1% of the full history) |
 | End-to-end answer accuracy¹ | **72%** |
 
 ¹ With a strong reader (GPT-5); a small local reader scores ~54%. The oracle ceiling (perfect retrieval, GPT-4o reader) is ~82%, so retrieval costs ~10 points — most of it on multi-session aggregation, the known weak spot. We'd rather show you the honest number than a cherry-picked one.

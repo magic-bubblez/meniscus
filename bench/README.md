@@ -34,8 +34,8 @@ Frozen memories are gitignored (large); you rebuild them locally.
 ### 3. Retrieval metrics (free — no LLM)
 
 ```bash
-python bench/metrics.py       # recall + set-complete (all@k) per question type   -> 0.94 recall
-python bench/reduction.py     # injected vs full-history tokens                    -> ~98.9% reduction
+python bench/metrics.py       # recall + set-complete (all@k) per question type   -> 0.89 recall
+python bench/reduction.py     # injected vs full-history tokens                    -> ~99.1% reduction
 ```
 
 ### 4. End-to-end answer accuracy (small; spend-capped)
@@ -52,8 +52,8 @@ python bench/answer_accuracy.py                            # default small reade
 
 | Claim | Script | Notes |
 |---|---|---|
-| Retrieval recall 0.94 | `bench/metrics.py` | fraction of gold evidence in the returned set |
-| Context reduction ~98.9% | `bench/reduction.py` | 1 − injected/full-history tokens |
+| Retrieval recall 0.89 | `bench/metrics.py` | fraction of gold evidence in the returned set |
+| Context reduction ~99.1% | `bench/reduction.py` | 1 − injected/full-history tokens |
 | Answer accuracy 72% / ~54% | `bench/answer_accuracy.py` | 72% with a GPT-5 reader, ~54% with a small reader; LLM-judged |
 
 `metrics.py` and `reduction.py` call `search_facts` directly and make no LLM calls, so they are

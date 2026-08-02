@@ -94,12 +94,11 @@ def main(limit: int | None = None) -> None:
         meta = json.loads(sidecar.read_text())
         conn = get_connection(sidecar.with_suffix(".db"))
         init_db(conn)
-        query_embedding = fr._embed_query(embedding_model, meta["question"])
-        facts = fr.search_facts(
+        facts = fr.retrieve(
             conn,
             text=meta["question"],
             limit=_cfg.RETRIEVAL_DEFAULT_LIMIT,
-            query_embedding=query_embedding,
+            embedding_model=embedding_model,
         )
         conn.close()
 

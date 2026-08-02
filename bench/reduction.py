@@ -43,9 +43,8 @@ def main() -> None:
             continue
         conn = get_connection(sidecar.with_suffix(".db"))
         init_db(conn)
-        query_embedding = fr._embed_query(embedding_model, meta["question"])
-        facts = fr.search_facts(
-            conn, text=meta["question"], limit=_cfg.RETRIEVAL_DEFAULT_LIMIT, query_embedding=query_embedding
+        facts = fr.retrieve(
+            conn, text=meta["question"], limit=_cfg.RETRIEVAL_DEFAULT_LIMIT, embedding_model=embedding_model
         )
         conn.close()
         haystack = meta["full_haystack_chars"] // 4
@@ -61,7 +60,7 @@ def main() -> None:
     print(f"  Full history (fed to Claude WITHOUT a memory layer):  ~{avg_hay:>7,.0f} tokens  (avg)")
     print(f"  What Meniscus feeds the model to answer:              ~{avg_inj:>7,.0f} tokens  (avg)")
     print(f"  ── reduction:                                          {100 * (1 - avg_inj / avg_hay):>5.1f}%")
-    print(f"     (at 94% retrieval recall — the answer's still there)\n")
+    print(f"     (at 89% retrieval recall — the answer's still there)\n")
 
     median = statistics.median(haystacks)
     rep = min(rows, key=lambda r: abs(r[0] - median))

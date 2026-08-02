@@ -12,18 +12,18 @@ from dotenv import load_dotenv
 
 load_dotenv(str(ROOT / ".env"))
 
-import config as _cfg
+import meniscus.config as _cfg
 
 _cfg.EMBEDDING_PROVIDER = "local"
 _cfg.EMBEDDING_DIMENSIONS = 768
 
-from db import get_connection, init_db  # noqa: E402
-from providers import get_embedding_model  # noqa: E402
-import fact_retrieval as fr  # noqa: E402
+from meniscus.db import get_connection, init_db  # noqa: E402
+from meniscus.providers import get_embedding_model  # noqa: E402
+from meniscus import fact_retrieval as fr  # noqa: E402
 
-import db as _db  # noqa: E402
-import providers as _p  # noqa: E402
-import providers.local_embedding as _le  # noqa: E402
+import meniscus.db as _db  # noqa: E402
+import meniscus.providers as _p  # noqa: E402
+import meniscus.providers.local_embedding as _le  # noqa: E402
 
 _db.EMBEDDING_PROVIDER = "local"
 _db.EMBEDDING_DIMENSIONS = 768

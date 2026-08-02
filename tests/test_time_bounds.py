@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from time_bounds import normalize_time_bound, normalize_time_window
+from meniscus.time_bounds import normalize_time_bound, normalize_time_window
 
 
 def test_date_only_bounds_cover_whole_day():

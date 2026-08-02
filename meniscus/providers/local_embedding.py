@@ -4,18 +4,37 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 
 os.environ.setdefault("HF_HUB_VERBOSITY", "error")
 
-from config import EMBEDDING_DIMENSIONS
-from embedding_interface import EmbeddingInterface
-from exceptions import EmbeddingDimensionMismatchError, ModelUnavailableError
+from meniscus.config import EMBEDDING_DIMENSIONS
+from meniscus.embedding_interface import EmbeddingInterface
+from meniscus.exceptions import EmbeddingDimensionMismatchError, ModelUnavailableError
 
 logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
 
 _LOCAL_MODEL_NAME = "BAAI/bge-base-en-v1.5"
 _LOCAL_EMBEDDING_DIM = 768
 _QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
+
+
+def _model_is_cached() -> bool:
+    folder = "models--" + _LOCAL_MODEL_NAME.replace("/", "--")
+    hf_home = os.environ.get("HF_HOME")
+    roots = [
+        os.environ.get("HF_HUB_CACHE"),
+        os.environ.get("HUGGINGFACE_HUB_CACHE"),
+        f"{hf_home}/hub" if hf_home else None,
+        str(Path.home() / ".cache" / "huggingface" / "hub"),
+    ]
+    return any(root and (Path(root) / folder).exists() for root in roots)
+
+
+# Cached model -> load offline so startup never blocks on a Hugging Face network call.
+if _model_is_cached():
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")
+    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 
 
 class LocalEmbeddingProvider(EmbeddingInterface):

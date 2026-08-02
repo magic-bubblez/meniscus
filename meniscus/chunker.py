@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from config import CHUNK_SIZE_WORDS
+from meniscus.config import CHUNK_SIZE_WORDS
 
 _HEADING_RE = re.compile(r"(?m)(?=^#{1,6}\s+)")
 _SENTENCE_RE = re.compile(r"(?<=[.!?])\s+")

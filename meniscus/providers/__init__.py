@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from config import DEFAULT_MODEL_PROVIDER, EMBEDDING_DIMENSIONS, EMBEDDING_PROVIDER
-from embedding_interface import EmbeddingInterface
-from exceptions import EmbeddingDimensionMismatchError, MeniscusError
-from model_interface import ModelInterface
+from meniscus.config import DEFAULT_MODEL_PROVIDER, EMBEDDING_DIMENSIONS, EMBEDDING_PROVIDER
+from meniscus.embedding_interface import EmbeddingInterface
+from meniscus.exceptions import EmbeddingDimensionMismatchError, MeniscusError
+from meniscus.model_interface import ModelInterface
 
 _LLM_REGISTRY: dict[str, Callable[[], ModelInterface]] = {}
 _EMBEDDING_REGISTRY: dict[str, Callable[[], EmbeddingInterface]] = {}
@@ -22,13 +22,13 @@ def _register_embedding(name: str, factory: Callable[[], EmbeddingInterface]) ->
 
 
 def _make_openrouter_llm() -> ModelInterface:
-    from providers.openrouter import OpenRouterProvider
+    from meniscus.providers.openrouter import OpenRouterProvider
 
     return OpenRouterProvider()
 
 
 def _make_local_embedding() -> EmbeddingInterface:
-    from providers.local_embedding import LocalEmbeddingProvider
+    from meniscus.providers.local_embedding import LocalEmbeddingProvider
 
     return LocalEmbeddingProvider()
 

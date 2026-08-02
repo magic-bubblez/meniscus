@@ -8,9 +8,9 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-from chunker import chunk_content
-from db import transactional
-from meniscus_types import ExtractionStatus
+from meniscus.chunker import chunk_content
+from meniscus.db import transactional
+from meniscus.meniscus_types import ExtractionStatus
 
 _SUPPORTED_EXTENSIONS = {".txt", ".md"}
 

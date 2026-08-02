@@ -10,7 +10,7 @@ router = APIRouter()
 
 
 def get_db() -> Iterator[sqlite3.Connection]:
-    from db import get_connection, init_db
+    from meniscus.db import get_connection, init_db
 
     conn = get_connection()
     init_db(conn)
@@ -38,7 +38,7 @@ def create_event(
     request: Request,
     conn: sqlite3.Connection = Depends(get_db),
 ) -> EventResponse:
-    from pipeline import ingest_and_process
+    from meniscus.pipeline import ingest_and_process
 
     event_ids = ingest_and_process(
         conn,

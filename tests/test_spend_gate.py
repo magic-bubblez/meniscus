@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import pytest
 
-import config
-import spend_gate
-from event_intake import ingest_event
-from exceptions import SpendCeilingError
-from models import ExtractedEntity, ExtractionResult
-from pipeline import process_pending_events
+from meniscus import config
+from meniscus import spend_gate
+from meniscus.event_intake import ingest_event
+from meniscus.exceptions import SpendCeilingError
+from meniscus.models import ExtractedEntity, ExtractionResult
+from meniscus.pipeline import process_pending_events
 
 MODEL = "deepseek/deepseek-v4-flash"
 

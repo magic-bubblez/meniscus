@@ -10,12 +10,12 @@ import struct
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
-import config
-from embedding_interface import EmbeddingInterface
-from exceptions import ModelUnavailableError
-from time_bounds import normalize_time_window
-from tokens import estimate_tokens
-from vocab_reconciliation import normalize
+from meniscus import config
+from meniscus.embedding_interface import EmbeddingInterface
+from meniscus.exceptions import ModelUnavailableError
+from meniscus.time_bounds import normalize_time_window
+from meniscus.tokens import estimate_tokens
+from meniscus.vocab_reconciliation import normalize
 
 logger = logging.getLogger(__name__)
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import chunker
+from meniscus import chunker
 
 
 def test_chunk_content_small():

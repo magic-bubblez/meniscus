@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from event_intake import (
+from meniscus.event_intake import (
     _normalize_timestamp,
     compute_content_hash,
     ingest_directory,

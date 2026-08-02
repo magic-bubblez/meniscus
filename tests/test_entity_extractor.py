@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from config import ENTITY_CAP
-from entity_extractor import build_extraction_prompt, extract_entities
-from exceptions import ModelUnavailableError
-from models import ExtractedEntity, ExtractionResult
+from meniscus.config import ENTITY_CAP
+from meniscus.entity_extractor import build_extraction_prompt, extract_entities
+from meniscus.exceptions import ModelUnavailableError
+from meniscus.models import ExtractedEntity, ExtractionResult
 
 
 class FakeModel:

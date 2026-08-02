@@ -4,8 +4,8 @@ import json
 
 from click.testing import CliRunner
 
-import db
-from cli.main import cli
+from meniscus import db
+from meniscus.cli.main import cli
 
 
 def _add_event(conn, content: str, timestamp: str, *, source: str = "test") -> int:
@@ -58,7 +58,7 @@ def _add_fact(conn, event_id: int, text: str, entity_names: list[str] | None = N
 def test_ask_json_flag_no_llm(tmp_path, monkeypatch):
     db_path = tmp_path / "ask.db"
     monkeypatch.setattr(db, "EMBEDDING_PROVIDER", "none")
-    monkeypatch.setattr("providers.EMBEDDING_PROVIDER", "none")
+    monkeypatch.setattr("meniscus.providers.EMBEDDING_PROVIDER", "none")
     conn = db.get_connection(db_path)
     db.init_db(conn)
     event_id = _add_event(conn, "auth cli fallback", "2026-01-01T00:00:00+00:00")

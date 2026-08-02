@@ -16,7 +16,7 @@ load_dotenv(str(ROOT / ".env"))
 
 from sentence_transformers import SentenceTransformer
 
-from db import get_connection
+from meniscus.db import get_connection
 
 MODEL_NAME = "BAAI/bge-base-en-v1.5"
 SRC = ROOT / "bench" / "memories"

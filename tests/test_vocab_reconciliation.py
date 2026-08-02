@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from models import ExtractedEntity, ExtractionResult
-from vocab_reconciliation import normalize, reconcile_entities
+from meniscus.models import ExtractedEntity, ExtractionResult
+from meniscus.vocab_reconciliation import normalize, reconcile_entities
 
 
 def _insert_event(conn, hash_value="event"):

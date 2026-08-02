@@ -8,8 +8,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Generator
 
-from config import DB_PATH, EMBEDDING_DIMENSIONS, EMBEDDING_PROVIDER
-from exceptions import (
+from meniscus.config import DB_PATH, EMBEDDING_DIMENSIONS, EMBEDDING_PROVIDER
+from meniscus.exceptions import (
     DatabaseError,
     EmbeddingBackendUnavailableError,
     EmbeddingDimensionMismatchError,

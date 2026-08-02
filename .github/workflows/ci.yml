@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main, release-prep]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install (all extras + dev)
+        run: pip install -e ".[all,dev]"
+      - name: Run tests
+        run: pytest -q
+      - name: CLI entry point
+        run: men --help
+
+  clean-install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Build wheel
+        run: |
+          pip install build
+          python -m build
+      - name: Install the built wheel with extras
+        run: pip install "dist/meniscus-0.1.0-py3-none-any.whl[all]"
+      - name: Verify entry points and imports
+        run: |
+          men --help
+          python -c "import meniscus, meniscus.config, meniscus.db, meniscus.fact_retrieval, meniscus.mcp_server, meniscus.pipeline"

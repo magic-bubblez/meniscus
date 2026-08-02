@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import config
+from meniscus import config
 
 
 def test_all_config_constants_exist():

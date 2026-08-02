@@ -4,8 +4,8 @@ import sqlite3
 
 import pytest
 
-import db
-from exceptions import (
+from meniscus import db
+from meniscus.exceptions import (
     EmbeddingBackendUnavailableError,
     EmbeddingDimensionMismatchError,
 )

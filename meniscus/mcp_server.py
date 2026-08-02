@@ -13,14 +13,14 @@ from pathlib import Path
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 
-from config import RETRIEVAL_DEFAULT_LIMIT
+from meniscus.config import RETRIEVAL_DEFAULT_LIMIT
 
 logger = logging.getLogger(__name__)
 
 # Background processor drains pending events so logging never blocks on LLM calls.
 _POLL_SECONDS = 3.0
 
-load_dotenv(Path(__file__).with_name(".env"))
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 MCP_INSTRUCTIONS = """\
 Meniscus is this person's private, long-term memory -- a structured record of
@@ -54,10 +54,10 @@ mcp = FastMCP("meniscus", instructions=MCP_INSTRUCTIONS)
 
 
 def _get_resources():
-    from db import get_connection, init_db
-    from exceptions import ModelUnavailableError
-    from providers import get_embedding_model, get_model
-    from startup import announce_embedding_state
+    from meniscus.db import get_connection, init_db
+    from meniscus.exceptions import ModelUnavailableError
+    from meniscus.providers import get_embedding_model, get_model
+    from meniscus.startup import announce_embedding_state
 
     conn = get_connection()
     try:
@@ -79,10 +79,10 @@ def _get_resources():
 
 
 def _get_query_resources():
-    from db import get_connection, init_db
-    from exceptions import ModelUnavailableError
-    from providers import get_embedding_model
-    from startup import announce_embedding_state
+    from meniscus.db import get_connection, init_db
+    from meniscus.exceptions import ModelUnavailableError
+    from meniscus.providers import get_embedding_model
+    from meniscus.startup import announce_embedding_state
 
     conn = get_connection()
     try:
@@ -120,10 +120,10 @@ def _process_loop() -> None:
     its own connection so it never blocks a `meniscus_log` capture write.
     """
 
-    from db import get_connection, init_db
-    from exceptions import ModelUnavailableError
-    from pipeline import process_pending_events
-    from providers import get_embedding_model, get_model
+    from meniscus.db import get_connection, init_db
+    from meniscus.exceptions import ModelUnavailableError
+    from meniscus.pipeline import process_pending_events
+    from meniscus.providers import get_embedding_model, get_model
 
     conn = get_connection()
     init_db(conn)
@@ -155,8 +155,8 @@ def meniscus_log(content: str, source: str = "mcp") -> str:
     built in the background). Do NOT announce it, ask permission, or wait on it,
     and do not make the person watch you save things."""
 
-    from db import get_connection, init_db
-    from event_intake import ingest_event
+    from meniscus.db import get_connection, init_db
+    from meniscus.event_intake import ingest_event
 
     _ensure_background_processor()
     conn = get_connection()
@@ -199,7 +199,7 @@ def meniscus_recall(
     never a finished answer. Meniscus has no date parser: always pass explicit ISO
     dates."""
 
-    from fact_retrieval import episode, get_event, recent_facts, retrieve
+    from meniscus.fact_retrieval import episode, get_event, recent_facts, retrieve
 
     conn, embedding_model = _get_query_resources()
     try:

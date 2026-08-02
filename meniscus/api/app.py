@@ -10,10 +10,10 @@ load_dotenv()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    from db import get_connection, init_db
-    from pipeline import process_pending_events
-    from providers import get_embedding_model, get_model
-    from startup import announce_embedding_state
+    from meniscus.db import get_connection, init_db
+    from meniscus.pipeline import process_pending_events
+    from meniscus.providers import get_embedding_model, get_model
+    from meniscus.startup import announce_embedding_state
 
     model = get_model()
     embedding_model = get_embedding_model()
@@ -36,6 +36,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-from api.events import router as events_router
+from meniscus.api.events import router as events_router
 
 app.include_router(events_router)

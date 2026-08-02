@@ -1,29 +1,27 @@
 
-# secrets - never commit
 .env
 
-# benchmark data (large)
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+.DS_Store
+
+.mcp.json
+
+# benchmark data & frozen memories (large; regenerable via bench/)
 bench/data/
 bench/out/
 bench/memories*/
 bench/*.log
-DESIGN.md
-/Users/bubbles/Desktop/meniscus/LEARNING_CONCEPTS.md
-/Users/bubbles/Desktop/meniscus/PRODUCT_PLAN.md
-SESSION_NOTES.md
-tests/__pycache__/
-providers/__pycache__/
-cli/__pycache__/
-api/__pycache__/
-__pycache__/
-# Frozen benchmark memories (large, regenerable via bench/freeze.py)
-bench/memories/
 
-# python env & caches
-.venv/
-venv/
-*.pyc
-.pytest_cache/
-.DS_Store
-*.egg-info/
-.mcp.json
+demo/
+
+notes/
+
+# build artifacts
+/dist/
+/build/

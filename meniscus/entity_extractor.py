@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import sqlite3
 
-import config
-from model_interface import ModelInterface
-from models import ExtractionResult
+from meniscus import config
+from meniscus.model_interface import ModelInterface
+from meniscus.models import ExtractionResult
 
 # Bumped when the prompt changes; recorded per extraction for reproducibility.
 EXTRACTION_PROMPT_VERSION: str = "extract-v3-entities+facts-cacheable"

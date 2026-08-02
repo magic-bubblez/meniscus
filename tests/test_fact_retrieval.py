@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import config
-import fact_retrieval as fr
-from fact_retrieval import Fact
+from meniscus import config
+from meniscus import fact_retrieval as fr
+from meniscus.fact_retrieval import Fact
 
 
 def _add_event(conn, content, timestamp, source="test"):

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-import providers
-from exceptions import EmbeddingDimensionMismatchError, MeniscusError
-from providers.local_embedding import LocalEmbeddingProvider
+from meniscus import providers
+from meniscus.exceptions import EmbeddingDimensionMismatchError, MeniscusError
+from meniscus.providers.local_embedding import LocalEmbeddingProvider
 
 
 def test_get_embedding_model_none():

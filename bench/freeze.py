@@ -17,21 +17,21 @@ load_dotenv(str(ROOT / ".env"))
 
 # Local embeddings (bge-base, 768d) so ingestion never hits an embedding cap.
 # Patch BEFORE importing modules that bind these names.
-import config as _cfg
+import meniscus.config as _cfg
 
 _cfg.EMBEDDING_PROVIDER = "local"
 _cfg.EMBEDDING_DIMENSIONS = 768
 
-from db import get_connection, init_db  # noqa: E402
-from event_intake import ingest_event  # noqa: E402
-from exceptions import SpendCeilingError  # noqa: E402
-from pipeline import process_pending_events  # noqa: E402
-from spend_gate import estimate_cost_usd  # noqa: E402
-from providers import get_embedding_model, get_model  # noqa: E402
+from meniscus.db import get_connection, init_db  # noqa: E402
+from meniscus.event_intake import ingest_event  # noqa: E402
+from meniscus.exceptions import SpendCeilingError  # noqa: E402
+from meniscus.pipeline import process_pending_events  # noqa: E402
+from meniscus.spend_gate import estimate_cost_usd  # noqa: E402
+from meniscus.providers import get_embedding_model, get_model  # noqa: E402
 
-import db as _db  # noqa: E402
-import providers as _p  # noqa: E402
-import providers.local_embedding as _le  # noqa: E402
+import meniscus.db as _db  # noqa: E402
+import meniscus.providers as _p  # noqa: E402
+import meniscus.providers.local_embedding as _le  # noqa: E402
 
 _db.EMBEDDING_PROVIDER = "local"
 _db.EMBEDDING_DIMENSIONS = 768
@@ -54,7 +54,7 @@ def stratified_indices(data: list, count: int) -> list[int]:
 
     Round-robins across the types so a partial run still covers every type --
     important because the easy types (single-session) flatter the system and the
-    hard ones (multi-session, temporal) are where threads must prove themselves.
+    hard ones (multi-session, temporal) are where retrieval must prove itself.
     """
 
     by_type: dict[str, list[int]] = {}
@@ -147,7 +147,7 @@ def freeze(dataset_path: str, count: int, shard_index: int = 0, shard_count: int
 
     _override = os.environ.get("MENISCUS_FREEZE_MODEL")
     if _override:
-        from providers.openrouter import OpenRouterProvider
+        from meniscus.providers.openrouter import OpenRouterProvider
         model, model_slug = OpenRouterProvider(model=_override), _override
     else:
         model, model_slug = get_model(), _cfg.OPENROUTER_MODEL

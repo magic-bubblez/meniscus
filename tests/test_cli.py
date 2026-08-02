@@ -4,10 +4,10 @@ import json
 
 from click.testing import CliRunner
 
-import config
-import db
-from cli import main as cli_main
-from cli.main import AskAnswer, RetrievalParams, cli
+from meniscus import config
+from meniscus import db
+from meniscus.cli import main as cli_main
+from meniscus.cli.main import AskAnswer, RetrievalParams, cli
 
 
 class SequencedModel:

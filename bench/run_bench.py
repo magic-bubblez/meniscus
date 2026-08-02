@@ -11,25 +11,27 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
-load_dotenv()
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+load_dotenv(str(ROOT / ".env"))
 
 
-import config as _cfg
+import meniscus.config as _cfg
 _cfg.EMBEDDING_PROVIDER = "local"
-_cfg.EMBEDDING_DIMENSIONS = 384
+_cfg.EMBEDDING_DIMENSIONS = 768
 
-from db import get_connection, init_db
-from event_intake import ingest_event
-from pipeline import process_pending_events
-from providers import get_model, get_embedding_model
-import fact_retrieval as fr
-from cli.main import SYNTHESIS_PROMPT_TEMPLATE, AskAnswer
+from meniscus.db import get_connection, init_db
+from meniscus.event_intake import ingest_event
+from meniscus.pipeline import process_pending_events
+from meniscus.providers import get_model, get_embedding_model
+from meniscus import fact_retrieval as fr
+from meniscus.cli.main import SYNTHESIS_PROMPT_TEMPLATE, AskAnswer
 
 # Belt-and-suspenders: re-patch the names each module bound at import time.
-import db as _db; _db.EMBEDDING_PROVIDER = "local"; _db.EMBEDDING_DIMENSIONS = 384
-import providers as _p; _p.EMBEDDING_PROVIDER = "local"; _p.EMBEDDING_DIMENSIONS = 384
-import thread_assigner as _ta; _ta.EMBEDDING_PROVIDER = "local"
-import providers.local_embedding as _le; _le.EMBEDDING_DIMENSIONS = 384
+import meniscus.db as _db; _db.EMBEDDING_PROVIDER = "local"; _db.EMBEDDING_DIMENSIONS = 768
+import meniscus.providers as _p; _p.EMBEDDING_PROVIDER = "local"; _p.EMBEDDING_DIMENSIONS = 768
+import meniscus.providers.local_embedding as _le; _le.EMBEDDING_DIMENSIONS = 768
 
 
 def parse_ts(s: str) -> datetime:
@@ -66,7 +68,7 @@ def run(dataset_path, selector, out_path):
     data = [full[i] for i in selector] if isinstance(selector, list) else full[:selector]
     model, emb = get_model(), get_embedding_model()
 
-    from providers.openrouter import OpenRouterProvider
+    from meniscus.providers.openrouter import OpenRouterProvider
     synth = OpenRouterProvider(model=_cfg.SYNTHESIS_MODEL)
     rows = []
     with open(out_path, "w") as fout:

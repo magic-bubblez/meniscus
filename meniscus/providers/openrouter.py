@@ -9,14 +9,14 @@ from typing import Any, TypeVar
 import requests
 from pydantic import BaseModel, ValidationError
 
-from config import (
+from meniscus.config import (
     MAX_OUTPUT_TOKENS,
     MAX_RETRIES,
     OPENROUTER_MODEL,
     RETRY_BASE_DELAY_SECONDS,
 )
-from exceptions import ModelUnavailableError
-from model_interface import ModelInterface
+from meniscus.exceptions import ModelUnavailableError
+from meniscus.model_interface import ModelInterface
 
 T = TypeVar("T", bound=BaseModel)
 

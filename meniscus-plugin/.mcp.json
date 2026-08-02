@@ -1,8 +1,7 @@
 {
   "mcpServers": {
     "meniscus": {
-      "command": "/Users/bubbles/Desktop/meniscus/.venv/bin/python",
-      "args": ["/Users/bubbles/Desktop/meniscus/mcp_server.py"],
+      "command": "men-mcp",
       "env": {"PYTHONUNBUFFERED": "1"}
     }
   }

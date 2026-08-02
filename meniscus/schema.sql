@@ -1,7 +1,3 @@
--- =============================================================
--- SOURCE OF TRUTH
--- =============================================================
-
 CREATE TABLE IF NOT EXISTS events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source TEXT NOT NULL,

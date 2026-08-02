@@ -174,7 +174,7 @@ class _FriendlyGroup(click.Group):
     """Turn known setup errors into a clean one-line message, not a traceback."""
 
     def invoke(self, ctx: click.Context):
-        from exceptions import MeniscusError
+        from meniscus.exceptions import MeniscusError
 
         try:
             return super().invoke(ctx)
@@ -195,9 +195,9 @@ def cli() -> None:
 def doctor() -> None:
     """Check the environment and report what (if anything) is missing."""
 
-    import config
-    from db import get_connection, get_db_path, init_db
-    from exceptions import MeniscusError, ModelUnavailableError
+    from meniscus import config
+    from meniscus.db import get_connection, get_db_path, init_db
+    from meniscus.exceptions import MeniscusError, ModelUnavailableError
 
     def line(name: str, ok: bool | None, detail: str) -> None:
         mark = "✓" if ok else ("•" if ok is None else "✗")
@@ -249,7 +249,7 @@ def doctor() -> None:
     # LLM provider (bring your own — required to extract & group). Actually try
     # to BUILD it: this catches both a missing key and a missing SDK, which a
     # bare env-var check would miss.
-    from providers import get_model
+    from meniscus.providers import get_model
 
     llm = config.DEFAULT_MODEL_PROVIDER
     try:
@@ -302,10 +302,10 @@ def _get_resources():
     the provider factories.
     """
 
-    from db import get_connection, init_db
-    from exceptions import ModelUnavailableError
-    from providers import get_embedding_model, get_model
-    from startup import announce_embedding_state
+    from meniscus.db import get_connection, init_db
+    from meniscus.exceptions import ModelUnavailableError
+    from meniscus.providers import get_embedding_model, get_model
+    from meniscus.startup import announce_embedding_state
 
     conn = get_connection()
     try:
@@ -328,9 +328,9 @@ def _get_resources():
 def _get_retrieval_resources():
     """Open the DB and best-effort model resources for retrieval."""
 
-    from db import get_connection, init_db
-    from exceptions import ModelUnavailableError
-    from providers import get_embedding_model, get_model
+    from meniscus.db import get_connection, init_db
+    from meniscus.exceptions import ModelUnavailableError
+    from meniscus.providers import get_embedding_model, get_model
 
     conn = get_connection()
     try:
@@ -384,7 +384,7 @@ def add(message: str | None, source: str) -> None:
 
     conn, model, embedding_model = _get_resources()
     try:
-        from pipeline import ingest_and_process
+        from meniscus.pipeline import ingest_and_process
 
         event_ids = ingest_and_process(conn, message, source, model, embedding_model)
         if not event_ids:
@@ -412,7 +412,7 @@ def import_path(path: str) -> None:
 
     conn, model, embedding_model = _get_resources()
     try:
-        from pipeline import import_and_process
+        from meniscus.pipeline import import_and_process
 
         def _progress(done: int, total: int) -> None:
             click.echo(f"\r  processing {done}/{total}…", nl=False)
@@ -451,11 +451,11 @@ def process() -> None:
 
     conn, model, embedding_model = _get_resources()
     try:
-        from pipeline import process_pending_events
+        from meniscus.pipeline import process_pending_events
 
         if model is None:
             click.echo(
-                "No model configured, so nothing was processed. Set GEMINI_API_KEY "
+                "No model configured, so nothing was processed. Set OPENROUTER_API_KEY "
                 "(see `men doctor`) and run `men process` again."
             )
             return
@@ -499,9 +499,9 @@ def watch(dry_run: bool, catch_up: bool, once: bool, distill: bool, interval: fl
 
     import time as _time
 
-    from db import get_connection, init_db
-    from event_intake import ingest_event
-    from transcript_ingest import discover_sources, parse_turns, read_new_lines
+    from meniscus.db import get_connection, init_db
+    from meniscus.event_intake import ingest_event
+    from meniscus.transcript_ingest import discover_sources, parse_turns, read_new_lines
 
     conn = get_connection()
     init_db(conn)
@@ -548,8 +548,8 @@ def watch(dry_run: bool, catch_up: bool, once: bool, distill: bool, interval: fl
         return captured
 
     def _distill() -> None:
-        from pipeline import process_pending_events
-        from providers import get_embedding_model, get_model
+        from meniscus.pipeline import process_pending_events
+        from meniscus.providers import get_embedding_model, get_model
 
         model, embedding_model = get_model(), get_embedding_model()
         if model is not None:
@@ -596,10 +596,10 @@ def watch(dry_run: bool, catch_up: bool, once: bool, distill: bool, interval: fl
 def ask(question: str, as_json: bool, limit: int | None) -> None:
     """Ask Meniscus using deterministic fact retrieval plus optional synthesis."""
 
-    import config
-    from exceptions import ModelUnavailableError
-    from fact_retrieval import recent_facts, retrieve
-    from time_bounds import normalize_time_window
+    from meniscus import config
+    from meniscus.exceptions import ModelUnavailableError
+    from meniscus.fact_retrieval import recent_facts, retrieve
+    from meniscus.time_bounds import normalize_time_window
 
     resolved_limit = (
         config.RETRIEVAL_DEFAULT_LIMIT if limit is None else limit
@@ -747,7 +747,7 @@ def list_events(
 ) -> None:
     """Show stored events."""
 
-    from time_bounds import normalize_time_window
+    from meniscus.time_bounds import normalize_time_window
 
     try:
         start_bound, end_bound = normalize_time_window(since, until)
@@ -830,7 +830,7 @@ def show_event(event_id: int) -> None:
 def status() -> None:
     """System stats."""
 
-    import config
+    from meniscus import config
 
     conn = _read_connection()
     try:
@@ -930,7 +930,7 @@ def _sql_cell(value: object, width: int = 60) -> str:
 
 
 def _read_connection():
-    from db import get_connection, init_db
+    from meniscus.db import get_connection, init_db
 
     conn = get_connection()
     init_db(conn)

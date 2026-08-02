@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import sys
 
-import config
+from meniscus import config
 
 _EMBEDDING_NOTICE = (
-    "Embeddings disabled -- thread assignment uses entity overlap only; "
-    "vector search and zero-overlap continuity are unavailable."
+    "Embeddings disabled -- vector search is unavailable; "
+    "retrieval falls back to keyword and entity matching."
 )
 _embedding_notice_shown = False
 

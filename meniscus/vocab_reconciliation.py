@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime, timezone
 
-from models import ExtractionResult
+from meniscus.models import ExtractionResult
 
 
 def normalize(text: str) -> str:

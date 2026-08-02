@@ -6,11 +6,15 @@ build-backend = "hatchling.build"
 name = "meniscus"
 version = "0.1.0"
 description = "Local structured memory system for AI agents"
+readme = "README.md"
+authors = [{ name = "magic_bubblez" }]
+license = "MIT"
 requires-python = ">=3.11"
 dependencies = [
     "click>=8.0",
     "pydantic>=2.0",
     "python-dotenv>=1.0",
+    "requests>=2.0",
 ]
 
 [project.optional-dependencies]
@@ -36,32 +40,15 @@ dev = [
 ]
 
 [project.scripts]
-men = "cli.main:cli"
-men-mcp = "mcp_server:mcp.run"
+men = "meniscus.cli.main:cli"
+men-mcp = "meniscus.mcp_server:mcp.run"
+
+[project.urls]
+Homepage = "https://github.com/magic-bubblez/meniscus"
+Repository = "https://github.com/magic-bubblez/meniscus"
 
 [tool.hatch.build.targets.wheel]
-packages = ["api", "cli", "providers"]
-
-[tool.hatch.build.targets.wheel.force-include]
-"schema.sql" = "schema.sql"
-"chunker.py" = "chunker.py"
-"config.py" = "config.py"
-"db.py" = "db.py"
-"embedding_interface.py" = "embedding_interface.py"
-"entity_extractor.py" = "entity_extractor.py"
-"event_intake.py" = "event_intake.py"
-"exceptions.py" = "exceptions.py"
-"mcp_server.py" = "mcp_server.py"
-"model_interface.py" = "model_interface.py"
-"models.py" = "models.py"
-"pipeline.py" = "pipeline.py"
-"retrieval.py" = "retrieval.py"
-"startup.py" = "startup.py"
-"thread_assigner.py" = "thread_assigner.py"
-"thread_summarizer.py" = "thread_summarizer.py"
-"time_bounds.py" = "time_bounds.py"
-"meniscus_types.py" = "meniscus_types.py"
-"vocab_reconciliation.py" = "vocab_reconciliation.py"
+packages = ["meniscus"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

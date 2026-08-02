@@ -5,11 +5,11 @@ from __future__ import annotations
 import pytest
 from click.testing import CliRunner
 
-import config as config_mod
-import db as db_mod
-import providers as providers_mod
-from cli.main import AskAnswer, RetrievalParams, cli
-from models import ExtractedEntity, ExtractionResult
+import meniscus.config as config_mod
+import meniscus.db as db_mod
+import meniscus.providers as providers_mod
+from meniscus.cli.main import AskAnswer, RetrievalParams, cli
+from meniscus.models import ExtractedEntity, ExtractionResult
 
 _KEYWORDS = ["jwt", "auth", "token", "refresh", "groceries", "store"]
 

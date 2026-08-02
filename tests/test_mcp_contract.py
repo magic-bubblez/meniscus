@@ -6,7 +6,7 @@ import tomllib
 
 
 def test_mcp_recall_is_the_single_read_tool():
-    source_path = Path(__file__).parents[1] / "mcp_server.py"
+    source_path = Path(__file__).parents[1] / "meniscus" / "mcp_server.py"
     source = source_path.read_text()
     tree = ast.parse(source)
     function = next(
@@ -27,4 +27,17 @@ def test_mcp_dependency_stays_on_supported_major():
 
     assert project["project"]["optional-dependencies"]["mcp"] == [
         "mcp[cli]>=1.27,<2"
+    ]
+
+
+def test_distribution_uses_the_meniscus_namespace():
+    project_path = Path(__file__).parents[1] / "pyproject.toml"
+    project = tomllib.loads(project_path.read_text())
+
+    assert project["project"]["scripts"] == {
+        "men": "meniscus.cli.main:cli",
+        "men-mcp": "meniscus.mcp_server:mcp.run",
+    }
+    assert project["tool"]["hatch"]["build"]["targets"]["wheel"]["packages"] == [
+        "meniscus"
     ]

@@ -12,15 +12,15 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
-from db import transactional
-from embedding_interface import EmbeddingInterface
-from entity_extractor import EXTRACTION_PROMPT_VERSION, extract_entities
-from event_intake import ingest_event
-from exceptions import ModelUnavailableError
-from models import ExtractionResult
-from model_interface import ModelInterface
-from meniscus_types import ExtractionStatus
-from vocab_reconciliation import reconcile_entities
+from meniscus.db import transactional
+from meniscus.embedding_interface import EmbeddingInterface
+from meniscus.entity_extractor import EXTRACTION_PROMPT_VERSION, extract_entities
+from meniscus.event_intake import ingest_event
+from meniscus.exceptions import ModelUnavailableError
+from meniscus.models import ExtractionResult
+from meniscus.model_interface import ModelInterface
+from meniscus.meniscus_types import ExtractionStatus
+from meniscus.vocab_reconciliation import reconcile_entities
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +59,7 @@ def process_event(
 def _extraction_provenance() -> tuple[str, str]:
     """Resolve (provider, model) for the active extractor from config/env."""
 
-    import config
+    from meniscus import config
 
     return config.DEFAULT_MODEL_PROVIDER, config.OPENROUTER_MODEL
 
@@ -145,7 +145,7 @@ def _embed_facts(
 ) -> None:
     """Embed fact texts and store them in fact_embeddings (own transaction)."""
 
-    import config
+    from meniscus import config
 
     if embedding_model is None or not fact_rows or not _fact_vec0_available(conn):
         return
@@ -241,7 +241,7 @@ def import_and_process(
 
     from pathlib import Path
 
-    from event_intake import ingest_directory, ingest_file
+    from meniscus.event_intake import ingest_directory, ingest_file
 
     target = Path(path)
     if target.is_dir():
@@ -284,8 +284,8 @@ def _process_events_batch(
 ) -> list[int]:
     """Parallel batch engine shared by `men import` and `men process`."""
 
-    import config
-    from spend_gate import enforce_spend_ceiling
+    from meniscus import config
+    from meniscus.spend_gate import enforce_spend_ceiling
 
     _provider, model_slug = _extraction_provenance()
     enforce_spend_ceiling(pending, model_slug, allow_large_run)
@@ -366,7 +366,7 @@ def _ratelimit_retry(call):
     to brush the per-minute limit, so here we back off and retry.
     """
 
-    from config import IMPORT_RATELIMIT_RETRIES, RETRY_BASE_DELAY_SECONDS
+    from meniscus.config import IMPORT_RATELIMIT_RETRIES, RETRY_BASE_DELAY_SECONDS
 
     last_error: Exception | None = None
     for attempt in range(IMPORT_RATELIMIT_RETRIES):
@@ -382,7 +382,7 @@ def _ratelimit_retry(call):
 
 
 def _extract_with_retry(source: str, content: str, timestamp: str, model: ModelInterface):
-    from entity_extractor import extract_from_content
+    from meniscus.entity_extractor import extract_from_content
 
     return _ratelimit_retry(lambda: extract_from_content(source, content, model, timestamp))
 

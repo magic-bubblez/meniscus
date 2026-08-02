@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from models import ExtractedEntity, ExtractionResult
+from meniscus.models import ExtractedEntity, ExtractionResult
 
 
 def test_extracted_entity_defaults():

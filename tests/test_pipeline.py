@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from models import ExtractedEntity, ExtractionResult
-from pipeline import ingest_and_process, process_pending_events
+from meniscus.models import ExtractedEntity, ExtractionResult
+from meniscus.pipeline import ingest_and_process, process_pending_events
 
 
 class FakeModel:
@@ -37,7 +37,7 @@ def test_ingest_and_process_without_embeddings(conn):
 
 
 def test_process_pending_events(conn):
-    from event_intake import ingest_event
+    from meniscus.event_intake import ingest_event
 
     ingest_event(conn, "one", "cli", timestamp="2026-01-01T00:00:00+00:00")
     ingest_event(conn, "two", "cli", timestamp="2026-01-01T01:00:00+00:00")
@@ -69,7 +69,7 @@ def test_ingest_and_process_no_model_saves_pending(conn):
 
 
 def test_process_pending_events_no_model_is_noop(conn):
-    from event_intake import ingest_event
+    from meniscus.event_intake import ingest_event
 
     ingest_event(conn, "later", "cli", timestamp="2026-01-01T00:00:00+00:00")
     assert process_pending_events(conn, None, None) == []
@@ -80,7 +80,7 @@ def test_process_pending_events_no_model_is_noop(conn):
 
 def test_import_and_process_parallel(conn, tmp_path):
     """Batch import: parallel extract, serial assign, progress callback."""
-    from pipeline import import_and_process
+    from meniscus.pipeline import import_and_process
 
     notes = tmp_path / "notes"
     (notes / "sub").mkdir(parents=True)          # also proves recursion

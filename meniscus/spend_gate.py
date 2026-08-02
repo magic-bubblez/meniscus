@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import os
 
-import config
-from entity_extractor import build_extraction_prompt
-from exceptions import SpendCeilingError
-from tokens import estimate_tokens
+from meniscus import config
+from meniscus.entity_extractor import build_extraction_prompt
+from meniscus.exceptions import SpendCeilingError
+from meniscus.tokens import estimate_tokens
 
 ALLOW_LARGE_RUN_ENV: str = "MENISCUS_ALLOW_LARGE_RUN"
 _FALSEY = {"", "0", "false", "no", "off"}

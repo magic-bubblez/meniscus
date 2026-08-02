@@ -15,20 +15,20 @@ from dotenv import load_dotenv
 
 load_dotenv(str(ROOT / ".env"))
 
-import config as _cfg
+import meniscus.config as _cfg
 
 _cfg.EMBEDDING_PROVIDER = "local"
 _cfg.EMBEDDING_DIMENSIONS = 768
 
-from db import get_connection, init_db  # noqa: E402
-from providers import get_embedding_model  # noqa: E402
-from providers.openrouter import OpenRouterProvider  # noqa: E402
-import fact_retrieval as fr  # noqa: E402
-from tokens import estimate_tokens  # noqa: E402
+from meniscus.db import get_connection, init_db  # noqa: E402
+from meniscus.providers import get_embedding_model  # noqa: E402
+from meniscus.providers.openrouter import OpenRouterProvider  # noqa: E402
+from meniscus import fact_retrieval as fr  # noqa: E402
+from meniscus.tokens import estimate_tokens  # noqa: E402
 
-import db as _db  # noqa: E402
-import providers as _p  # noqa: E402
-import providers.local_embedding as _le  # noqa: E402
+import meniscus.db as _db  # noqa: E402
+import meniscus.providers as _p  # noqa: E402
+import meniscus.providers.local_embedding as _le  # noqa: E402
 
 _db.EMBEDDING_PROVIDER = "local"
 _db.EMBEDDING_DIMENSIONS = 768
@@ -42,7 +42,6 @@ JUDGE_MODEL = os.environ.get("EVAL_JUDGE", "google/gemini-3.5-flash-lite")
 PRICES_USD_PER_MTOK = {
     "google/gemini-3.5-flash-lite": (0.30, 2.50),
     "openai/gpt-5": (1.25, 10.00),
-    "anthropic/claude-sonnet-4.6": (3.00, 15.00),
     "google/gemini-3-flash-preview": (0.50, 3.00),
     "deepseek/deepseek-v4-flash": (0.14, 0.28),
 }

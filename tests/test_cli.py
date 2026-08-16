@@ -413,6 +413,8 @@ def _stub_service_install(tmp_path, monkeypatch, system, *, running=True, which=
     monkeypatch.setattr(subprocess, "run", run)
     monkeypatch.setattr(shutil, "which", lambda _name: "/usr/bin/systemctl" if which else None)
     monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    # Collapse the stop-confirmation poll so tests do not wait on real time.
+    monkeypatch.setattr(cli_main, "_SERVICE_STOP_TIMEOUT_SECONDS", 0.0)
     return calls, tool_python
 
 
@@ -464,6 +466,69 @@ def test_linux_installs_systemd_user_unit(tmp_path, monkeypatch, capsys):
     assert f"Environment=MENISCUS_HOME={tmp_path / '.meniscus'}" in body
     assert ["systemctl", "--user", "enable", "--now", "ai.meniscus.watch.service"] in calls
     assert "installed and started" in capsys.readouterr().out
+
+
+def _stub_linger(monkeypatch, linger_output, *, loginctl=True):
+    """Point loginctl at a fixed Linger answer, leaving systemctl behaviour intact."""
+
+    import shutil
+    import subprocess
+
+    real_run = subprocess.run
+
+    def run(args, **kwargs):
+        if args[:2] == ["loginctl", "show-user"]:
+            return subprocess.CompletedProcess(args, 0, linger_output, "")
+        return real_run(args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", run)
+    monkeypatch.setattr(
+        shutil,
+        "which",
+        lambda name: None if (name == "loginctl" and not loginctl) else "/usr/bin/x",
+    )
+
+
+def test_linux_warns_when_linger_is_disabled(tmp_path, monkeypatch, capsys):
+    """systemd stops user services at logout; say so where it is actionable."""
+
+    _stub_service_install(tmp_path, monkeypatch, "Linux", running=True)
+    _stub_linger(monkeypatch, "Linger=no\n")
+
+    cli_main._install_background_service()
+
+    output = capsys.readouterr().out
+    assert "pause when you log out" in output
+    assert "enable-linger" in output
+
+
+def test_linux_silent_when_linger_is_enabled(tmp_path, monkeypatch, capsys):
+    _stub_service_install(tmp_path, monkeypatch, "Linux", running=True)
+    _stub_linger(monkeypatch, "Linger=yes\n")
+
+    cli_main._install_background_service()
+
+    assert "enable-linger" not in capsys.readouterr().out
+
+
+def test_linux_silent_when_linger_cannot_be_determined(tmp_path, monkeypatch, capsys):
+    """An unreadable answer is not a problem worth reporting."""
+
+    _stub_service_install(tmp_path, monkeypatch, "Linux", running=True)
+    _stub_linger(monkeypatch, "", loginctl=False)
+
+    cli_main._install_background_service()
+
+    assert "enable-linger" not in capsys.readouterr().out
+
+
+def test_macos_never_mentions_linger(tmp_path, monkeypatch, capsys):
+    _stub_service_install(tmp_path, monkeypatch, "Darwin", running=True)
+    _stub_linger(monkeypatch, "Linger=no\n")
+
+    cli_main._install_background_service()
+
+    assert "enable-linger" not in capsys.readouterr().out
 
 
 def test_linux_without_systemd_falls_back_to_manual(tmp_path, monkeypatch, capsys):
@@ -549,6 +614,44 @@ def test_watch_stop_removes_the_systemd_unit(tmp_path, monkeypatch):
     assert not unit_path.exists()
     assert ["systemctl", "--user", "disable", "--now", "ai.meniscus.watch.service"] in calls
     assert "stopped and removed" in result.output
+
+
+def test_stop_waits_for_a_service_that_is_still_shutting_down(monkeypatch):
+    """A job signalled to stop may take seconds to exit; that is not a failed stop."""
+
+    import time
+
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(cli_main, "_SERVICE_STOP_TIMEOUT_SECONDS", 5.0)
+    states = iter([True, True, False])
+
+    assert cli_main._still_running_after_grace(lambda: next(states)) is False
+
+
+def test_stop_gives_up_after_the_timeout(monkeypatch):
+    import time
+
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(cli_main, "_SERVICE_STOP_TIMEOUT_SECONDS", 0.0)
+
+    assert cli_main._still_running_after_grace(lambda: True) is True
+
+
+def test_stop_reports_success_when_a_slow_service_finally_exits(tmp_path, monkeypatch, capsys):
+    """The end-to-end shape of the bug: stop worked, but the report said otherwise."""
+
+    _stub_service_install(tmp_path, monkeypatch, "Darwin")
+    monkeypatch.setattr(cli_main, "_SERVICE_STOP_TIMEOUT_SECONDS", 5.0)
+    plist_path = tmp_path / "Library" / "LaunchAgents" / "ai.meniscus.watch.plist"
+    plist_path.parent.mkdir(parents=True)
+    plist_path.write_bytes(b"stub")
+
+    states = iter([True, True, False])
+    monkeypatch.setattr(cli_main, "_launchagent_running", lambda: next(states))
+
+    cli_main._uninstall_background_service()
+
+    assert "stopped and removed" in capsys.readouterr().out
 
 
 def test_watch_stop_when_nothing_is_installed(tmp_path, monkeypatch):

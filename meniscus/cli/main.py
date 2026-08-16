@@ -202,11 +202,17 @@ _WATCH_ARGS = ["-m", "meniscus.cli.main", "watch"]
 _WATCH_SUPERVISED_ARGS = [*_WATCH_ARGS, "--distill"]
 _WATCH_SEED_ARGS = [*_WATCH_ARGS, "--catch-up", "--once"]
 _SERVICE_START_GRACE_SECONDS = 1.5
+# A busy `men watch` can be mid-poll or mid-LLM-call when it is signalled, so
+# stopping is confirmed by polling rather than by one immediate look.
+_SERVICE_STOP_TIMEOUT_SECONDS = 10.0
+_SERVICE_STOP_POLL_SECONDS = 0.25
 
 _MACOS = "Darwin"
 _LINUX = "Linux"
 _LAUNCHCTL = "launchctl"
 _SYSTEMCTL = "systemctl"
+_LOGINCTL = "loginctl"
+_LINGER_DISABLED_OUTPUT = "Linger=no"
 # The one line of `launchctl print` / `systemctl is-active` output we depend on.
 _LAUNCHD_RUNNING_MARKER = "state = running"
 _SYSTEMD_ACTIVE_STATE = "active"
@@ -923,7 +929,10 @@ def _uninstall_launchagent() -> None:
 
     subprocess.run([_LAUNCHCTL, "bootout", service], capture_output=True)
     plist_path.unlink(missing_ok=True)
-    _report_stopped(_launchagent_running(), f"{_LAUNCHCTL} bootout {service}")
+    _report_stopped(
+        _still_running_after_grace(_launchagent_running),
+        f"{_LAUNCHCTL} bootout {service}",
+    )
 
 
 def _uninstall_systemd_unit() -> None:
@@ -946,9 +955,29 @@ def _uninstall_systemd_unit() -> None:
     if has_systemctl:
         subprocess.run([_SYSTEMCTL, "--user", "daemon-reload"], capture_output=True)
     _report_stopped(
-        _systemd_unit_active(unit_name),
+        _still_running_after_grace(lambda: _systemd_unit_active(unit_name)),
         f"{_SYSTEMCTL} --user disable --now {unit_name}",
     )
+
+
+def _still_running_after_grace(is_running) -> bool:
+    """Poll until the service is gone, and only then call a stop failed.
+
+    Stopping is asynchronous: the supervisor returns as soon as it has signalled
+    the job, while the job itself may take seconds to finish what it was doing
+    and exit. Checking once, immediately, reports a service that is on its way
+    out as one that refused to stop.
+    """
+
+    import time
+
+    deadline = time.monotonic() + _SERVICE_STOP_TIMEOUT_SECONDS
+    while True:
+        if not is_running():
+            return False
+        if time.monotonic() >= deadline:
+            return True
+        time.sleep(_SERVICE_STOP_POLL_SECONDS)
 
 
 def _report_stopped(still_running: bool, manual: str) -> None:
@@ -1128,12 +1157,45 @@ def _install_systemd_unit(python_path: str) -> None:
     # `Restart=always` means a unit that crash-loops still reports success from
     # `enable --now`; only a second look tells us it stayed up.
     time.sleep(_SERVICE_START_GRACE_SECONDS)
+    active = _systemd_unit_active(unit_name)
     _report_service(
-        _systemd_unit_active(unit_name),
+        active,
         "the unit is not active",
         journal,
         f"{_SYSTEMCTL} --user restart {unit_name}",
     )
+    if active:
+        _warn_if_linger_disabled()
+
+
+def _warn_if_linger_disabled() -> None:
+    """Say so when systemd will stop capture at logout, and only then.
+
+    A systemd user service is torn down when the user's last session ends unless
+    lingering is enabled. Enabling it needs an authorization Meniscus cannot ask
+    for on the user's behalf, so the next best thing is to say so once, here,
+    where it is actionable — and to stay silent when it does not apply.
+    """
+
+    import getpass
+    import shutil
+    import subprocess
+
+    if shutil.which(_LOGINCTL) is None:
+        return
+
+    user = getpass.getuser()
+    result = subprocess.run(
+        [_LOGINCTL, "show-user", user, "--property=Linger"],
+        capture_output=True,
+        text=True,
+    )
+    # Only speak up on a definite "no" — an unreadable answer is not a problem.
+    if result.returncode != 0 or result.stdout.strip() != _LINGER_DISABLED_OUTPUT:
+        return
+
+    click.echo("    Capture will pause when you log out. To keep it running:")
+    click.echo(f"      {_LOGINCTL} enable-linger {user}")
 
 
 def _last_log_line(path) -> str:
@@ -1367,8 +1429,8 @@ def process() -> None:
 @click.option("--once", is_flag=True, help="Capture new turns once and exit (no tailing).")
 @click.option("--distill", is_flag=True, help="Also extract facts (LLM cost); default captures raw only.")
 @click.option("--interval", default=3.0, show_default=True, help="Seconds between polls when tailing.")
-@click.option("--start", is_flag=True, help="Install and start background capture, then exit.")
-@click.option("--stop", is_flag=True, help="Stop background capture and remove the service.")
+@click.option("--start", is_flag=True, help="Start capturing in the background.")
+@click.option("--stop", is_flag=True, help="Stop capturing in the background.")
 def watch(
     dry_run: bool,
     catch_up: bool,

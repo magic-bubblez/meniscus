@@ -138,8 +138,8 @@ Open the client's MCP settings and add the object above. The settings screen and
 
 | Command | Purpose |
 |---|---|
-| `men watch --start` | Install and start background capture, then exit |
-| `men watch --stop` | Stop background capture and remove the service |
+| `men watch --start` | Start capturing in the background |
+| `men watch --stop` | Stop capturing in the background |
 | `men watch --dry-run` | Show discoverable transcript turns without writing |
 | `men watch --catch-up --distill` | Ignore old history, then capture and process new turns |
 | `men watch --distill` | Capture and process continuously in the foreground |
@@ -147,7 +147,7 @@ Open the client's MCP settings and add the object above. The settings screen and
 
 Without `--distill`, `men watch` safely stores raw events as pending. Run `men process` later to turn them into searchable facts.
 
-`--start` and `--stop` control the supervised background service described in [Background capture](#background-capture). The other flags run capture in your terminal for as long as the command lasts.
+`--start` and `--stop` control [background capture](#background-capture). The other flags run capture in your terminal for as long as the command lasts.
 
 Passive transcript adapters currently recognize Claude Code and Codex session files. Every MCP-compatible client can still recall and log memory through `meniscus_recall` and `meniscus_log`.
 
@@ -180,32 +180,16 @@ If processing becomes unavailable, captured events remain pending instead of bei
 
 ## Background capture
 
-Background capture keeps a supervised `men watch` running, so Claude Code and Codex sessions are recorded without you starting anything. `men init` offers to install it, and it can be switched at any time without re-running setup:
+Background capture keeps `men watch` running, so Claude Code and Codex sessions are recorded without you starting anything. `men init` offers to install it, and it can be switched on or off at any time:
 
 ```console
-men watch --start    # install and start it
-men watch --stop     # stop it and remove the service, including at next login
+men watch --start    # start capturing in the background
+men watch --stop     # stop capturing
 ```
 
-Stopping removes the service definition rather than only killing the process — both supervisors are configured to restart it and to start it again at login, so removing the definition is what actually turns capture off.
+Both commands report what actually happened, and capture stays off after `--stop` until you start it again.
 
-| Platform | Supervisor | Logs |
-|---|---|---|
-| macOS | LaunchAgent `~/Library/LaunchAgents/ai.meniscus.watch.plist` | `~/.meniscus/capture.err.log` |
-| Linux | systemd user unit `~/.config/systemd/user/ai.meniscus.watch.service` | `journalctl --user -u ai.meniscus.watch` |
-| Other | Not supervised — run `men watch --catch-up` yourself | terminal |
-
-On Linux, a systemd user service only survives logout if lingering is enabled for your account:
-
-```console
-loginctl enable-linger "$USER"
-```
-
-Without it, capture stops when your last session ends and resumes at next login. Machines without systemd fall back to running `men watch` manually.
-
-### If capture seems to have stopped
-
-`men status` shows how long ago the last event landed, and `men doctor` verifies that the database still accepts new events — a memory that stops growing is usually one of those two, not retrieval. Then read the service log for your platform from the table above.
+If memory seems to have stopped growing, `men status` shows how long ago the last event landed and `men doctor` checks that the database still accepts new events.
 
 ## How retrieval works
 

@@ -46,9 +46,9 @@ event, never mutating an old one.
 1. **Intake** — content is stored as one or more `events` (large inputs are chunked). Intake
    always commits first, so an event is durable even if distillation later fails. Duplicate
    content is deduplicated by a content hash of `(source, content)`.
-2. **Distillation** — a small LLM (via OpenRouter) reads each pending event and extracts
-   atomic facts. Filler turns with nothing worth keeping produce zero facts and are marked
-   complete (not retried forever).
+2. **Distillation** — a small LLM (via whichever provider is configured — see §7) reads each
+   pending event and extracts atomic facts. Filler turns with nothing worth keeping produce
+   zero facts and are marked complete (not retried forever).
 3. **Entity reconciliation** — entities named by the facts are resolved to canonical rows
    (via normalization + aliases) and linked through `fact_entity_edges`.
 4. **Embedding** — each fact is embedded locally with `bge-base-en-v1.5` (768-d) and written
@@ -101,9 +101,10 @@ read-time view over the append-only events, never materialized state.
 
 ## 6. Interfaces
 
-- **CLI (`men`)** — `add`, `import`, `process`, `ask`, `watch` (silent transcript capture),
-  `sql`, `tables`, `doctor`, and event inspection. `men ask` plans a query, retrieves
-  deterministically, and phrases an answer.
+- **CLI (`men`)** — `init` (interactive setup: provider, key, capture, MCP wiring), `add`,
+  `import`, `process`, `ask`, `watch` (silent transcript capture), `sql`, `tables`, `status`,
+  `doctor`, `help`, and event inspection (`list events`, `show event`). `men ask` plans a
+  query, retrieves deterministically, and phrases an answer.
 - **MCP** — exactly **two** tools, so an agent's surface stays minimal:
   - `meniscus_recall` — the single read entry point. One call; the argument selects the
     operation (topic search, a time window, a reconstructed session, or the raw source
@@ -114,8 +115,10 @@ read-time view over the append-only events, never materialized state.
 
 ## 7. Providers
 
-- **LLM** — OpenRouter is the only provider: `google/gemini-3.5-flash-lite` for fact distillation
-  (write) and `deepseek/deepseek-v4-flash` for answer synthesis (`men ask`).
+- **LLM** — bring your own key. Any OpenAI-compatible backend works (OpenRouter, OpenAI,
+  Gemini, Groq, xAI, Hugging Face, a local Ollama server, or any other OpenAI-compatible
+  endpoint via `provider = "custom"`); Anthropic is wired separately against Claude's native
+  API.
 - **Embeddings** — `bge-base-en-v1.5` run **locally** (768-d), no API. Query embeddings use a
   retrieval instruction prefix.
 

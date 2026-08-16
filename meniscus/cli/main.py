@@ -8,10 +8,13 @@ from dataclasses import asdict
 from datetime import date
 
 import click
-from dotenv import load_dotenv
 from pydantic import BaseModel
 
-load_dotenv()
+from meniscus.config import CUSTOM_PROVIDER
+from meniscus.home import load_env
+from meniscus.meniscus_types import ExtractionStatus
+
+load_env()
 
 
 class RetrievalParams(BaseModel):
@@ -27,6 +30,15 @@ class AskAnswer(BaseModel):
 
     answered: bool
     answer: str
+
+
+def _test_llm(model) -> tuple[bool, str]:
+    """Confirm the key authenticates via a free GET /models call — no generation cost."""
+
+    try:
+        return model.validate_key()
+    except Exception as exc:
+        return False, str(exc)
 
 
 RETRIEVAL_PARAM_PROMPT_TEMPLATE = """\
@@ -170,6 +182,29 @@ Facts:
 """
 
 
+_BANNER = [
+    " __  __   ______   _   _   _____    _____    _____   _    _    _____ ",
+    "|  \\/  | |  ____| | \\ | | |_   _|  / ____|  / ____| | |  | |  / ____|",
+    "| \\  / | | |__    |  \\| |   | |   | (___   | |      | |  | | | (___  ",
+    "| |\\/| | |  __|   | . ` |   | |    \\___ \\  | |      | |  | |  \\___ \\ ",
+    "| |  | | | |____  | |\\  |  _| |_   ____) | | |____  | |__| |  ____) |",
+    "|_|  |_| |______| |_| \\_| |_____| |_____/   \\_____|  \\____/  |_____/ ",
+]
+
+_BANNER_COLORS = [24, 25, 68, 110, 175, 174]
+
+
+def _print_banner() -> None:
+    import sys
+    use_color = sys.stdout.isatty()
+    for line, code in zip(_BANNER, _BANNER_COLORS):
+        if use_color:
+            click.echo(f"\033[38;5;{code}m  {line}\033[0m", color=True)
+        else:
+            click.echo(f"  {line}")
+    click.echo()
+
+
 class _FriendlyGroup(click.Group):
     """Turn known setup errors into a clean one-line message, not a traceback."""
 
@@ -179,16 +214,29 @@ class _FriendlyGroup(click.Group):
         try:
             return super().invoke(ctx)
         except MeniscusError as exc:
-            # MeniscusError messages already carry the fix hint (e.g. "Install
-            # sqlite-vec, or set EMBEDDING_PROVIDER='none'"). Print it plainly.
             click.echo(f"Error: {exc}", err=True)
             click.echo("Run `men doctor` to see what's missing.", err=True)
             raise SystemExit(1)
 
 
-@click.group(cls=_FriendlyGroup)
-def cli() -> None:
+@click.group(cls=_FriendlyGroup, invoke_without_command=True)
+@click.pass_context
+def cli(ctx: click.Context) -> None:
     """Meniscus: local structured memory for AI agents."""
+    if ctx.invoked_subcommand is None:
+        from meniscus.home import ENV_FILENAME, MENISCUS_HOME
+
+        env_exists = (MENISCUS_HOME / ENV_FILENAME).exists()
+        if not env_exists:
+            click.echo("")
+            _print_banner()
+            click.echo("  Get started:")
+            click.echo("    men init      set up your key, embeddings, and AI tool connections")
+            click.echo("    men doctor    check what's ready")
+            click.echo("    men --help    see all commands")
+            click.echo("")
+        else:
+            click.echo(ctx.get_help())
 
 
 @cli.command()
@@ -205,14 +253,12 @@ def doctor() -> None:
 
     click.echo("Meniscus setup check\n")
 
-    # database path
     try:
         db_path = get_db_path()
         line("database", True, str(db_path))
     except Exception as exc:  # pragma: no cover - defensive
         line("database", False, f"could not resolve path: {exc}")
 
-    # sqlite-vec
     provider = config.EMBEDDING_PROVIDER
     if provider == "none":
         line("sqlite-vec", None, "not required (EMBEDDING_PROVIDER=\"none\")")
@@ -233,45 +279,42 @@ def doctor() -> None:
             line(
                 "sqlite-vec",
                 False,
-                'not installed  →  pipx install "meniscus[vec]"  '
+                'not installed  →  uv tool install "meniscus[all]"  '
                 '(or set EMBEDDING_PROVIDER="none")',
             )
         except Exception as exc:
             line("sqlite-vec", False, f"installed but cannot load: {exc}")
 
-    # embedding config
     line(
         "embeddings",
         None,
         f'provider="{provider}", {config.EMBEDDING_DIMENSIONS} dims',
     )
-
-    # LLM provider (bring your own — required to extract & group). Actually try
-    # to BUILD it: this catches both a missing key and a missing SDK, which a
-    # bare env-var check would miss.
     from meniscus.providers import get_model
 
     llm = config.DEFAULT_MODEL_PROVIDER
+    llm_ok = False
     try:
-        get_model()
-        line("LLM provider", True, f'provider="{llm}" ready')
+        model = get_model()
+        ok, detail = _test_llm(model)
+        llm_ok = ok
+        line("LLM provider", ok, f'provider="{llm}" — {detail}')
     except ModelUnavailableError as exc:
         line(
             "LLM provider",
             False,
-            f"{exc}  (required to extract & group)",
+            f"{exc}  (required to process new memories)",
         )
     except ImportError:
         line(
             "LLM provider",
             False,
-            f'SDK not installed  →  pip install "meniscus[{llm}]"  '
-            "(required to extract & group)",
+            "provider not resolvable — check [model] provider in ~/.meniscus/config.toml "
+            "(required to process new memories)",
         )
     except Exception as exc:  # pragma: no cover - defensive
         line("LLM provider", False, str(exc))
 
-    # does the system actually initialize?
     conn = get_connection()
     try:
         init_db(conn)
@@ -284,13 +327,563 @@ def doctor() -> None:
         conn.close()
 
     click.echo("")
-    if startup_ok:
+    if startup_ok and llm_ok:
         click.echo(
-            "Ready. You can `men add` notes now; if no model is set they queue "
-            "until you configure one and run `men process`."
+            "Ready. Meniscus can capture, process, and retrieve memory."
+        )
+    elif startup_ok:
+        click.echo(
+            "Storage is ready, but new memories will remain pending until the "
+            "provider issue above is fixed."
         )
     else:
         click.echo("Fix the ✗ items above, then run `men doctor` again.")
+
+
+_PROVIDER_MENU = [
+    ("openrouter", "OpenRouter — one key, routes to hundreds of models"),
+    ("openai", "OpenAI"),
+    ("anthropic", "Anthropic"),
+    ("gemini", "Google Gemini"),
+    ("groq", "Groq — fast inference on open-weight models"),
+    ("xai", "xAI"),
+    ("huggingface", "Hugging Face — open-weight models via Inference Providers"),
+    ("ollama", "Ollama — free, runs models locally (no key needed)"),
+    (CUSTOM_PROVIDER, "Custom — any other OpenAI-compatible endpoint you specify"),
+]
+
+
+def _write_model_config(
+    cfg_path,
+    provider: str,
+    model: str,
+    base_url: str | None = None,
+    api_key_env: str | None = None,
+) -> None:
+    from meniscus.home import write_private_text
+
+    lines = [f"provider = {json.dumps(provider)}"]
+    if base_url:
+        lines.append(f"base_url = {json.dumps(base_url)}")
+    if api_key_env:
+        lines.append(f"api_key_env = {json.dumps(api_key_env)}")
+    lines.append(f"model = {json.dumps(model)}")
+    block = "[model]\n" + "\n".join(lines) + "\n"
+
+    existing = cfg_path.read_text() if cfg_path.exists() else ""
+    kept: list[str] = []
+    skipping = False
+    for line in existing.splitlines():
+        stripped = line.strip()
+        if stripped == "[model]":
+            skipping = True
+            continue
+        if skipping and stripped.startswith("[") and stripped != "[model]":
+            skipping = False
+        if not skipping:
+            kept.append(line)
+    rest = "\n".join(kept).strip()
+
+    content = (block + ("\n\n" + rest if rest else "")).strip() + "\n"
+    write_private_text(cfg_path, content)
+
+
+def _prompt_provider() -> str:
+    click.echo("  Choose your LLM provider")
+    click.echo("  Meniscus uses the same model to process memories and answer `men ask`.")
+    click.echo("")
+    for i, (_, description) in enumerate(_PROVIDER_MENU, start=1):
+        click.echo(f"    [{i}] {description}")
+    click.echo("")
+
+    choice = click.prompt(
+        "  Choice",
+        type=click.Choice([str(i) for i in range(1, len(_PROVIDER_MENU) + 1)]),
+        show_choices=False,
+    )
+    return _PROVIDER_MENU[int(choice) - 1][0]
+
+
+def _prompt_provider_connection(provider: str) -> tuple[str | None, str | None]:
+    import re
+    from urllib.parse import urlparse
+
+    from meniscus import config
+
+    click.echo("")
+    if provider == CUSTOM_PROVIDER:
+        base_url = click.prompt(
+            "  Base URL (OpenAI-compatible, e.g. https://vendor.example/v1)",
+            default=config.CUSTOM_BASE_URL,
+        ).strip()
+        api_key_env = click.prompt(
+            "  Name for the key in .env (e.g. MY_VENDOR_API_KEY)",
+            default=config.CUSTOM_API_KEY_ENV,
+        ).strip()
+        parsed_url = urlparse(base_url)
+        if parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
+            raise click.UsageError("Base URL must be an absolute HTTP(S) URL.")
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", api_key_env):
+            raise click.UsageError("API key variable must be a valid environment name.")
+        return base_url, api_key_env
+
+    preset = config.PROVIDER_PRESETS[provider]
+    if preset.api_key_env is None:
+        click.echo("  No API key needed — Meniscus will call your local Ollama server.")
+    return None, preset.api_key_env
+
+
+def _prompt_api_key(api_key_env: str | None) -> tuple[str | None, bool]:
+    import os
+
+    if api_key_env is None:
+        return None, False
+
+    existing_key = os.environ.get(api_key_env, "")
+    if existing_key:
+        click.echo(f"  {api_key_env} already loaded (…{existing_key[-4:]})")
+        if not click.confirm("  Update it?", default=False):
+            return existing_key, False
+
+    key = click.prompt(f"  Paste your {api_key_env}", hide_input=True).strip()
+    if not key:
+        raise click.UsageError("API key cannot be empty.")
+    return key, True
+
+
+def _persist_api_key(api_key_env: str | None, key: str | None, env_path) -> None:
+    import os
+
+    from meniscus.home import write_private_text
+
+    if api_key_env is None or key is None:
+        return
+
+    retained_lines = []
+    if env_path.exists():
+        retained_lines = [
+            line
+            for line in env_path.read_text().splitlines()
+            if not line.startswith(f"{api_key_env}=")
+        ]
+    retained_lines.append(f"{api_key_env}={json.dumps(key)}")
+    write_private_text(env_path, "\n".join(retained_lines) + "\n")
+    os.environ[api_key_env] = key
+    click.echo(f"  ✓ {api_key_env} saved to {env_path}")
+
+
+def _prompt_model(provider: str) -> str:
+    from meniscus import config
+
+    click.echo("")
+    if provider != CUSTOM_PROVIDER:
+        recommended = config.PROVIDER_DEFAULT_MODELS[provider]
+        click.echo(f"  Recommended model: {recommended}")
+        if click.confirm("  Use this model?", default=True):
+            return recommended
+
+    model = click.prompt("  Model ID supported by this provider").strip()
+    if not model:
+        raise click.UsageError("Model ID cannot be empty.")
+    return model
+
+
+def _validate_provider_selection(
+    provider: str,
+    model: str,
+    api_key: str | None,
+    base_url: str | None,
+) -> tuple[bool, str]:
+    from meniscus.providers import build_model
+
+    return _test_llm(build_model(provider, model, api_key, base_url))
+
+
+def _configure_model_interactively() -> None:
+    """Ask for one BYOK provider, credential, and model; persist the choice."""
+    import importlib
+
+    from meniscus import config
+    from meniscus.home import CONFIG_FILENAME, ENV_FILENAME, MENISCUS_HOME, ensure_home
+
+    ensure_home()
+    provider = _prompt_provider()
+    base_url, api_key_env = _prompt_provider_connection(provider)
+    api_key, should_persist_key = _prompt_api_key(api_key_env)
+    model = _prompt_model(provider)
+
+    click.echo("")
+    click.echo("  Checking API access and model availability…")
+    ok, detail = _validate_provider_selection(provider, model, api_key, base_url)
+    if not ok:
+        click.echo(f"  ✗ {detail}")
+        raise click.ClickException("Provider setup failed. Nothing was saved.")
+    click.echo(f"  ✓ {detail}")
+
+    if should_persist_key:
+        _persist_api_key(api_key_env, api_key, MENISCUS_HOME / ENV_FILENAME)
+
+    _write_model_config(
+        MENISCUS_HOME / CONFIG_FILENAME,
+        provider=provider,
+        model=model,
+        base_url=base_url,
+        api_key_env=api_key_env if provider == CUSTOM_PROVIDER else None,
+    )
+    importlib.reload(config)
+    click.echo(f"  ✓ Provider and model saved to {MENISCUS_HOME / CONFIG_FILENAME}")
+
+
+@cli.group("config", invoke_without_command=True)
+@click.pass_context
+def config_command(ctx: click.Context) -> None:
+    """Configure or inspect the active provider, key, and model."""
+    if ctx.invoked_subcommand is None:
+        _configure_model_interactively()
+
+
+@config_command.command("set")
+def config_set() -> None:
+    """Interactively change the active provider, key, and model."""
+    _configure_model_interactively()
+
+
+@config_command.command("show")
+def config_show() -> None:
+    """Show active model configuration without exposing the API key."""
+    import os
+
+    from meniscus import config
+
+    provider = config.DEFAULT_MODEL_PROVIDER
+    if provider == CUSTOM_PROVIDER:
+        key_env = config.CUSTOM_API_KEY_ENV
+        base_url = config.CUSTOM_BASE_URL
+    else:
+        preset = config.PROVIDER_PRESETS.get(provider or "")
+        key_env = preset.api_key_env if preset else None
+        base_url = preset.base_url if preset else None
+
+    click.echo(f"provider: {provider or 'not configured'}")
+    click.echo(f"model:    {config.MODEL or 'not configured'}")
+    if base_url:
+        click.echo(f"base URL: {base_url}")
+    if key_env:
+        value = os.environ.get(key_env, "")
+        state = f"set (…{value[-4:]})" if value else "not set"
+        click.echo(f"API key:  {key_env} — {state}")
+    else:
+        click.echo("API key:  not required")
+
+
+@cli.command()
+def init() -> None:
+    """Set up Meniscus: home dir, LLM provider, health check, capture, and AI tool wiring."""
+    import shutil
+
+    from meniscus.home import MENISCUS_HOME, ensure_home
+
+    click.echo("")
+    _print_banner()
+
+    ensure_home()
+    click.echo(f"  Memory home: {MENISCUS_HOME}")
+    click.echo("")
+
+    click.echo("  Step 1 of 4 — Connect your language model")
+    click.echo("  Meniscus uses your chosen model to turn useful parts of your AI")
+    click.echo("  sessions into searchable memory. You bring the provider and API key.")
+    click.echo("")
+    _configure_model_interactively()
+
+    click.echo("")
+
+    click.echo("  Step 2 of 4 — Checking your setup")
+    click.echo("")
+    _init_doctor()
+    click.echo("")
+
+    click.echo("  Step 3 of 4 — Auto-capture your AI sessions")
+    click.echo("")
+    click.echo("  Meniscus can silently watch your Claude Code / Codex conversations")
+    click.echo("  and save what's worth remembering — automatically, in the background.")
+    click.echo("")
+    click.echo("    [1] Background service  — always on, starts at login  (recommended)")
+    click.echo("    [2] Manual              — run `men watch` yourself when you want to capture")
+    click.echo("    [3] Skip                — log via `men add` or meniscus_log in your AI tool")
+    click.echo("")
+
+    choice = click.prompt(
+        "  Choice",
+        type=click.Choice(["1", "2", "3"]),
+        default="1",
+        show_choices=False,
+    )
+
+    if choice == "1":
+        _install_launchagent()
+    elif choice == "2":
+        click.echo("  → Run `men watch --catch-up --distill` to capture and process new sessions.")
+    else:
+        click.echo("  → Log manually: `men add \"note\"` or let your AI tools call meniscus_log.")
+
+    click.echo("")
+
+    click.echo("  Step 4 of 4 — Connect your AI tools")
+    click.echo("")
+
+    men_mcp_path = shutil.which("men-mcp")
+    if not men_mcp_path:
+        click.echo("  ✗ men-mcp not found on PATH — skipping.")
+        click.echo("    Ensure Meniscus is installed and ~/.local/bin is on your PATH.")
+    else:
+        _wire_mcp_tools(men_mcp_path)
+
+    click.echo("")
+    click.echo("  All done. Your memory is ready.")
+    click.echo("")
+    click.echo('  Try: men ask "what have I been working on?"')
+    click.echo("")
+
+
+@cli.command("help")
+def help_command() -> None:
+    """Show Meniscus usage guide with commands and configuration reference."""
+    from meniscus.home import CONFIG_FILENAME, ENV_FILENAME, MENISCUS_HOME
+
+    env_path = MENISCUS_HOME / ENV_FILENAME
+    cfg_path = MENISCUS_HOME / CONFIG_FILENAME
+
+    click.echo("")
+    _print_banner()
+
+    click.echo("  Meniscus — local structured memory for AI agents")
+    click.echo("")
+
+    click.echo("  GETTING STARTED")
+    click.echo("    men init            interactive setup: API key, health check, AI tool wiring")
+    click.echo("    men config set      change provider, API key, or model interactively")
+    click.echo("    men config show     show the active provider and model safely")
+    click.echo("    men doctor          check what's installed and configured")
+    click.echo("")
+
+    click.echo("  DAILY USE")
+    click.echo('    men add "note"      save a note or observation directly')
+    click.echo('    men ask "question"  ask your memory a question in plain language')
+    click.echo("    men watch           capture Claude Code / Codex sessions in real-time")
+    click.echo("    men import <path>   bulk-import a file or directory into memory")
+    click.echo("    men process         process any pending events (extract facts)")
+    click.echo("")
+
+    click.echo("  INSPECT")
+    click.echo("    men status          event / fact / entity counts")
+    click.echo("    men tables          all DB tables with row counts")
+    click.echo('    men sql "SELECT ..."  run a read-only SQL query against the DB')
+    click.echo("    men list events     browse stored events")
+    click.echo("    men show event N    full detail for event N")
+    click.echo("")
+
+    click.echo("  CONFIGURATION")
+    click.echo("")
+    click.echo("    `men init` and `men config set` show one recommended model for each")
+    click.echo("    provider. Accept it or enter another model ID from that provider.")
+    click.echo("")
+    click.echo(f"    API keys live in  {env_path}")
+    click.echo("    Store as many keys as you like; only the one matching the active")
+    click.echo("    provider (below) is ever read.")
+    click.echo("")
+    click.echo(f"    The active provider + model live in  {cfg_path}")
+    click.echo("    You normally never need to edit this file; use `men config set`.")
+    click.echo("")
+    click.echo("      [model]")
+    click.echo('      provider = "openrouter"   # see the provider list below')
+    click.echo('      model = "..."              # model ID from your provider')
+    click.echo("")
+    click.echo("      # only used when provider = \"custom\":")
+    click.echo('      # base_url    = "https://vendor.example/v1"')
+    click.echo('      # api_key_env = "MY_VENDOR_API_KEY"   # name of the key in .env')
+    click.echo("")
+    click.echo("      [spend]")
+    click.echo("      max_run_cost_usd = 20.0   # hard ceiling per batch run")
+    click.echo("")
+    click.echo("      [retrieval]")
+    click.echo("      default_limit = 30    # max facts returned per recall")
+    click.echo("      neighbour_max = 20    # neighbour facts gathered around a match")
+    click.echo("")
+    click.echo("      [ingestion]")
+    click.echo("      concurrency = 20      # parallel LLM calls during bulk import")
+    click.echo("")
+    click.echo("    Providers (key env var — what it is):")
+    click.echo("      openrouter    OPENROUTER_API_KEY  — one key, hundreds of models")
+    click.echo("      openai        OPENAI_API_KEY      — direct OpenAI access")
+    click.echo("      anthropic     ANTHROPIC_API_KEY   — direct Claude access (native API)")
+    click.echo("      gemini        GEMINI_API_KEY      — direct Gemini access")
+    click.echo("      groq          GROQ_API_KEY        — fast inference, open-weight models")
+    click.echo("      xai           XAI_API_KEY         — direct Grok access (not Groq — different company)")
+    click.echo("      huggingface   HF_TOKEN             — open-weight models via Inference Providers")
+    click.echo("      ollama        no key               — free, runs models locally")
+    click.echo("      custom        base_url + api_key_env you set — any other OpenAI-compatible endpoint")
+    click.echo("")
+    click.echo("    Embeddings run locally and are managed by Meniscus; there is no")
+    click.echo("    embedding provider or model to choose during setup.")
+    click.echo("")
+
+
+def _init_doctor() -> None:
+    """Compact health check for men init."""
+    from meniscus import config
+    from meniscus.db import get_connection, get_db_path, init_db
+    from meniscus.exceptions import MeniscusError, ModelUnavailableError
+
+    def line(ok: bool | None, name: str, detail: str) -> None:
+        mark = "✓" if ok else ("•" if ok is None else "✗")
+        click.echo(f"  {mark} {name:<14} {detail}")
+
+    try:
+        line(True, "database", str(get_db_path()))
+    except Exception as exc:
+        line(False, "database", str(exc))
+
+    try:
+        import sqlite3 as _s3
+        import sqlite_vec
+        p = _s3.connect(":memory:")
+        p.enable_load_extension(True)
+        sqlite_vec.load(p)
+        p.close()
+        line(True, "sqlite-vec", "ready")
+    except ImportError:
+        line(False, "sqlite-vec", 'missing — run: uv tool install "meniscus[all]"')
+    except Exception as exc:
+        line(False, "sqlite-vec", str(exc))
+
+    try:
+        from meniscus.providers import get_model
+        model = get_model()
+        ok, detail = _test_llm(model)
+        line(ok, "LLM provider", detail)
+    except ModelUnavailableError as exc:
+        line(False, "LLM provider", str(exc))
+    except Exception as exc:
+        line(False, "LLM provider", str(exc))
+
+    conn = get_connection()
+    try:
+        init_db(conn)
+        line(True, "startup", "database initializes cleanly")
+    except MeniscusError as exc:
+        line(False, "startup", str(exc))
+    finally:
+        conn.close()
+
+
+def _install_launchagent() -> None:
+    """Write and load a macOS LaunchAgent for continuous capture and processing."""
+    import platform
+    import plistlib
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    if platform.system() != "Darwin":
+        click.echo("  • Background service is macOS-only.")
+        click.echo("    Run `men watch --catch-up` manually to start capturing.")
+        return
+
+    from meniscus.home import MENISCUS_HOME
+
+    python_path = str(Path(sys.executable).resolve())
+    label = "ai.meniscus.watch"
+    agents_dir = Path.home() / "Library" / "LaunchAgents"
+    agents_dir.mkdir(parents=True, exist_ok=True)
+    plist_path = agents_dir / f"{label}.plist"
+
+    plist = {
+        "Label": label,
+        "ProgramArguments": [
+            python_path,
+            "-m",
+            "meniscus.cli.main",
+            "watch",
+            "--distill",
+        ],
+        "RunAtLoad": True,
+        "KeepAlive": True,
+        "EnvironmentVariables": {"MENISCUS_HOME": str(MENISCUS_HOME)},
+        "StandardOutPath": str(MENISCUS_HOME / "capture.out.log"),
+        "StandardErrorPath": str(MENISCUS_HOME / "capture.err.log"),
+    }
+
+    if plist_path.exists():
+        subprocess.run(["launchctl", "unload", str(plist_path)], capture_output=True)
+
+    seed = subprocess.run(
+        [
+            python_path,
+            "-m",
+            "meniscus.cli.main",
+            "watch",
+            "--catch-up",
+            "--once",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if seed.returncode != 0:
+        click.echo(f"  ✗ Could not initialize capture: {(seed.stderr or seed.stdout).strip()}")
+        return
+
+    with plist_path.open("wb") as plist_file:
+        plistlib.dump(plist, plist_file)
+    result = subprocess.run(["launchctl", "load", str(plist_path)], capture_output=True, text=True)
+    if result.returncode == 0:
+        click.echo("  ✓ Background service installed and started")
+        click.echo(f"    Logs → {MENISCUS_HOME}/capture.out.log")
+    else:
+        click.echo(f"  ✗ Service install failed: {result.stderr.strip()}")
+        click.echo(f"    Try manually: launchctl load {plist_path}")
+
+
+def _wire_mcp_tools(men_mcp_path: str) -> None:
+    """Detect installed AI tools and offer to wire MCP into each."""
+    import shutil
+    import subprocess
+
+    tools = []
+    if shutil.which("claude"):
+        tools.append(("Claude Code", "claude"))
+    if shutil.which("codex"):
+        tools.append(("Codex", "codex"))
+
+    if not tools:
+        click.echo("  No supported AI tools detected on PATH (Claude Code, Codex).")
+        click.echo("  Add Meniscus to any MCP client manually:")
+        click.echo(f'    command: "{men_mcp_path}"')
+        return
+
+    for tool_name, bin_name in tools:
+        click.echo(f"  Detected: {tool_name}")
+        if click.confirm(f"  Wire Meniscus into {tool_name}?", default=True):
+            scope = ["--scope", "user"] if bin_name == "claude" else []
+            result = subprocess.run(
+                [bin_name, "mcp", "add", *scope, "meniscus", "--", men_mcp_path],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode == 0:
+                click.echo(f"  ✓ Added to {tool_name} — restart it to activate")
+            else:
+                err = (result.stderr + result.stdout).strip().lower()
+                if "already" in err or "exists" in err:
+                    click.echo(f"  • Already wired into {tool_name}")
+                else:
+                    click.echo(f"  ✗ Failed: {(result.stderr or result.stdout).strip()}")
+                    manual = " ".join(
+                        [bin_name, "mcp", "add", *scope, "meniscus", "--", men_mcp_path]
+                    )
+                    click.echo(f"    Run manually: {manual}")
+        else:
+            click.echo(f"  Skipped {tool_name}.")
 
 
 def _get_resources():
@@ -303,22 +896,15 @@ def _get_resources():
     """
 
     from meniscus.db import get_connection, init_db
-    from meniscus.exceptions import ModelUnavailableError
-    from meniscus.providers import get_embedding_model, get_model
+    from meniscus.providers import get_embedding_if_available, get_model_if_available
     from meniscus.startup import announce_embedding_state
 
     conn = get_connection()
     try:
         init_db(conn)
         announce_embedding_state()
-        try:
-            model = get_model()
-        except (ModelUnavailableError, ImportError):
-            model = None
-        try:
-            embedding_model = get_embedding_model()
-        except (ModelUnavailableError, ImportError):
-            embedding_model = None
+        model = get_model_if_available()
+        embedding_model = get_embedding_if_available()
     except Exception:
         conn.close()
         raise
@@ -328,9 +914,9 @@ def _get_resources():
 def _get_retrieval_resources():
     """Open the DB and best-effort model resources for retrieval."""
 
+    from meniscus import config
     from meniscus.db import get_connection, init_db
-    from meniscus.exceptions import ModelUnavailableError
-    from meniscus.providers import get_embedding_model, get_model
+    from meniscus.providers import get_embedding_if_available, get_model_if_available
 
     conn = get_connection()
     try:
@@ -339,17 +925,11 @@ def _get_retrieval_resources():
         # pollute machine-readable output (e.g. `ask --json`). It stays on the
         # ingest commands, where the heads-up actually matters.
 
-        try:
-            model = get_model()
-        except (ModelUnavailableError, ImportError):
-            model = None
-
-        embedding_ready = True
-        try:
-            embedding_model = get_embedding_model()
-        except (ModelUnavailableError, ImportError):
-            embedding_model = None
-            embedding_ready = False
+        model = get_model_if_available()
+        embedding_model = get_embedding_if_available()
+        embedding_ready = (
+            config.EMBEDDING_PROVIDER == "none" or embedding_model is not None
+        )
     except Exception:
         conn.close()
         raise
@@ -361,17 +941,6 @@ def _get_retrieval_resources():
 @click.argument("message", required=False)
 @click.option("--source", default="cli", help="Source identifier for this event.")
 def add(message: str | None, source: str) -> None:
-    """Ingest a single event and process immediately.
-
-    Pass the note as an argument, or omit it (or pass '-') to read the whole
-    note from stdin — the clean way to capture multi-line or pasted text without
-    fighting shell quoting:
-
-        pbpaste | men add
-        men add < note.md
-        men add           # then type, and press Ctrl-D when done
-    """
-
     if message is None or message == "-":
         message = sys.stdin.read()
     if not message.strip():
@@ -431,8 +1000,8 @@ def import_path(path: str) -> None:
         placeholders = ",".join("?" for _ in event_ids)
         pending = conn.execute(
             f"SELECT COUNT(*) FROM events "
-            f"WHERE id IN ({placeholders}) AND extraction_status = 'pending'",
-            event_ids,
+            f"WHERE id IN ({placeholders}) AND extraction_status = ?",
+            [*event_ids, ExtractionStatus.PENDING],
         ).fetchone()[0]
         if pending:
             click.echo(
@@ -455,13 +1024,14 @@ def process() -> None:
 
         if model is None:
             click.echo(
-                "No model configured, so nothing was processed. Set OPENROUTER_API_KEY "
-                "(see `men doctor`) and run `men process` again."
+                "No model configured, so nothing was processed. Run `men config set`, "
+                "then run `men process` again."
             )
             return
 
         pending = conn.execute(
-            "SELECT COUNT(*) FROM events WHERE extraction_status = 'pending'"
+            "SELECT COUNT(*) FROM events WHERE extraction_status = ?",
+            (ExtractionStatus.PENDING,),
         ).fetchone()[0]
         if pending == 0:
             click.echo("Nothing to process — no pending events. You're all caught up.")
@@ -548,12 +1118,31 @@ def watch(dry_run: bool, catch_up: bool, once: bool, distill: bool, interval: fl
         return captured
 
     def _distill() -> None:
+        from meniscus.exceptions import MeniscusError
         from meniscus.pipeline import process_pending_events
         from meniscus.providers import get_embedding_model, get_model
 
-        model, embedding_model = get_model(), get_embedding_model()
-        if model is not None:
-            process_pending_events(conn, model, embedding_model)
+        pending = conn.execute(
+            "SELECT COUNT(*) FROM events WHERE extraction_status = ?",
+            (ExtractionStatus.PENDING,),
+        ).fetchone()[0]
+        if pending == 0:
+            return
+
+        try:
+            model, embedding_model = get_model(), get_embedding_model()
+            processed = process_pending_events(conn, model, embedding_model)
+            remaining = pending - len(processed)
+            if remaining:
+                click.echo(
+                    f"  {remaining} raw turn(s) remain pending; Meniscus will retry.",
+                    err=True,
+                )
+        except MeniscusError as exc:
+            click.echo(
+                f"  Memory processing unavailable ({exc}); raw turns remain pending.",
+                err=True,
+            )
 
     if catch_up:
         for source in discover_sources():
@@ -567,8 +1156,9 @@ def watch(dry_run: bool, catch_up: bool, once: bool, distill: bool, interval: fl
     else:
         captured = _drain()
         click.echo(f"Captured {captured} new turn(s).")
-        if distill and captured:
-            _distill()
+
+    if distill:
+        _distill()
 
     if once:
         conn.close()
@@ -604,12 +1194,20 @@ def ask(question: str, as_json: bool, limit: int | None) -> None:
     resolved_limit = (
         config.RETRIEVAL_DEFAULT_LIMIT if limit is None else limit
     )
+    def status(message: str) -> None:
+        # Keep JSON output machine-readable while making interactive waits
+        # visible. Status goes to stderr so answer text remains pipe-friendly.
+        if not as_json:
+            click.echo(f"  {message}", err=True)
+
+    status("Opening your memory…")
     conn, model, embedding_model, embedding_ready = _get_retrieval_resources()
     try:
         params = RetrievalParams(text=question)
         model_ready = model is not None
         _ = embedding_ready
         if model_ready and model is not None:
+            status("Understanding your question…")
             prompt = RETRIEVAL_PARAM_PROMPT_TEMPLATE.format(
                 today=date.today().isoformat(),
                 question=question,
@@ -627,6 +1225,7 @@ def ask(question: str, as_json: bool, limit: int | None) -> None:
             params = RetrievalParams(text=question)
 
         if params.text:
+            status("Searching your memory…")
             facts = retrieve(
                 conn,
                 text=params.text,
@@ -636,6 +1235,7 @@ def ask(question: str, as_json: bool, limit: int | None) -> None:
                 embedding_model=embedding_model,
             )
         else:
+            status("Looking through recent memory…")
             facts = recent_facts(
                 conn,
                 start=params.start,
@@ -644,7 +1244,24 @@ def ask(question: str, as_json: bool, limit: int | None) -> None:
             )
 
         facts_payload = [asdict(fact) for fact in facts]
-        if as_json or not model_ready or model is None:
+        if as_json:
+            click.echo(json.dumps({"facts": facts_payload, "count": len(facts)}))
+            return
+        if model is None:
+            click.echo(
+                "Note: no LLM configured, so this shows raw matched facts instead of "
+                "a written answer. Run `men doctor` to check your setup.\n",
+                err=True,
+            )
+            click.echo(json.dumps({"facts": facts_payload, "count": len(facts)}))
+            return
+        if not model_ready:
+            click.echo(
+                "Note: the LLM call failed (bad key, no credit, or unreachable), so this "
+                "shows raw matched facts instead of a written answer. Run `men doctor` "
+                "to check your key.\n",
+                err=True,
+            )
             click.echo(json.dumps({"facts": facts_payload, "count": len(facts)}))
             return
 
@@ -653,8 +1270,15 @@ def ask(question: str, as_json: bool, limit: int | None) -> None:
             facts=json.dumps(facts_payload),
         )
         try:
+            status("Writing your answer…")
             answer = model.generate_structured(prompt, AskAnswer)
         except ModelUnavailableError:
+            click.echo(
+                "Note: the LLM call failed (bad key, no credit, or unreachable), so this "
+                "shows raw matched facts instead of a written answer. Run `men doctor` "
+                "to check your key.\n",
+                err=True,
+            )
             click.echo(json.dumps({"facts": facts_payload, "count": len(facts)}))
             return
         if answer.answered and facts and answer.answer.strip():
@@ -780,7 +1404,7 @@ def list_events(
             return
         for row in rows:
             preview = row["content"][:80].replace("\n", " ")
-            marker = "+" if row["extraction_status"] == "completed" else "o"
+            marker = "+" if row["extraction_status"] == ExtractionStatus.COMPLETED else "o"
             click.echo(
                 f"[{marker}] {row['id']:>5} | {row['timestamp'][:19]} | "
                 f"{row['source']:<15} | {preview}"
@@ -836,10 +1460,12 @@ def status() -> None:
     try:
         event_count = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
         pending_count = conn.execute(
-            "SELECT COUNT(*) FROM events WHERE extraction_status = 'pending'"
+            "SELECT COUNT(*) FROM events WHERE extraction_status = ?",
+            (ExtractionStatus.PENDING,),
         ).fetchone()[0]
         completed_count = conn.execute(
-            "SELECT COUNT(*) FROM events WHERE extraction_status = 'completed'"
+            "SELECT COUNT(*) FROM events WHERE extraction_status = ?",
+            (ExtractionStatus.COMPLETED,),
         ).fetchone()[0]
         fact_count = conn.execute("SELECT COUNT(*) FROM facts").fetchone()[0]
         entity_count = conn.execute("SELECT COUNT(*) FROM entities").fetchone()[0]
@@ -865,6 +1491,7 @@ _SHADOW_SUFFIXES = (
     "_data", "_idx", "_docsize", "_config", "_content",
     "_chunks", "_info", "_rowids", "_vector_chunks00",
 )
+_READ_ONLY_SQL_PREFIXES = {"select", "pragma", "explain", "with"}
 
 
 def _is_shadow_table(name: str) -> bool:
@@ -887,7 +1514,8 @@ def tables() -> None:
             if _is_shadow_table(name):
                 continue
             try:
-                count = conn.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0]
+                identifier = '"' + name.replace('"', '""') + '"'
+                count = conn.execute(f"SELECT COUNT(*) FROM {identifier}").fetchone()[0]
             except Exception:
                 count = "-"
             click.echo(f"{name:<26}{count:>10}")
@@ -902,7 +1530,8 @@ def sql(query: str) -> None:
 
     import sqlite3
 
-    if query.lstrip().lower().split(None, 1)[0] not in ("select", "pragma", "explain", "with"):
+    words = query.lstrip().lower().split(None, 1)
+    if not words or words[0] not in _READ_ONLY_SQL_PREFIXES:
         raise click.UsageError("Only read-only queries (SELECT / PRAGMA / EXPLAIN / WITH) are allowed.")
 
     conn = _read_connection()
@@ -934,6 +1563,7 @@ def _read_connection():
 
     conn = get_connection()
     init_db(conn)
+    conn.execute("PRAGMA query_only=ON")
     return conn
 
 

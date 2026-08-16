@@ -16,3 +16,7 @@ class ModelInterface(ABC):
     @abstractmethod
     def generate_structured(self, prompt: str, response_model: type[T]) -> T:
         """Generate and parse a structured response."""
+
+    @abstractmethod
+    def validate_key(self) -> tuple[bool, str]:
+        """Cheaply confirm the configured key authenticates -- no generation call."""

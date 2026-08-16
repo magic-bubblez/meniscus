@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import sqlite3
 from collections.abc import Iterator
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -54,7 +55,7 @@ def create_event(
 
 @router.get("/events")
 def list_events(
-    limit: int = 20,
+    limit: Annotated[int, Query(ge=1, le=1000)] = 20,
     conn: sqlite3.Connection = Depends(get_db),
 ):
     rows = conn.execute(

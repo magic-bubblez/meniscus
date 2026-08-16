@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from meniscus.exceptions import ModelUnavailableError
 from meniscus.models import ExtractedEntity, ExtractionResult
 from meniscus.pipeline import ingest_and_process, process_pending_events
 
@@ -12,6 +13,11 @@ class FakeModel:
                 facts=["The person is learning Python."],
             )
         raise AssertionError(response_model)
+
+
+class UnavailableModel:
+    def generate_structured(self, prompt, response_model):
+        raise ModelUnavailableError("provider unavailable")
 
 
 def test_ingest_and_process_without_embeddings(conn):
@@ -51,8 +57,6 @@ def test_process_pending_events(conn):
 
 
 def test_ingest_and_process_no_model_saves_pending(conn):
-    """Capture must not fail when no model is available (Fix 1)."""
-
     event_ids = ingest_and_process(
         conn,
         content="a quick thought",
@@ -66,6 +70,22 @@ def test_ingest_and_process_no_model_saves_pending(conn):
         "SELECT extraction_status FROM events WHERE id = ?", (event_ids[0],)
     ).fetchone()
     assert row["extraction_status"] == "pending"
+
+
+def test_ingest_and_process_failed_distillation_saves_pending(conn):
+    event_ids = ingest_and_process(
+        conn,
+        content="a turn that must not be lost",
+        source="cli",
+        model=UnavailableModel(),
+        embedding_model=None,
+    )
+
+    row = conn.execute(
+        "SELECT extraction_status FROM events WHERE id = ?", (event_ids[0],)
+    ).fetchone()
+    assert row["extraction_status"] == "pending"
+    assert conn.execute("SELECT COUNT(*) FROM facts").fetchone()[0] == 0
 
 
 def test_process_pending_events_no_model_is_noop(conn):

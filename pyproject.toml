@@ -10,6 +10,18 @@ readme = "README.md"
 authors = [{ name = "magic_bubblez" }]
 license = "MIT"
 requires-python = ">=3.11"
+keywords = ["memory", "ai-agents", "llm", "mcp", "retrieval", "sqlite", "long-term-memory"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
 dependencies = [
     "click>=8.0",
     "pydantic>=2.0",
@@ -46,6 +58,7 @@ men-mcp = "meniscus.mcp_server:mcp.run"
 [project.urls]
 Homepage = "https://github.com/magic-bubblez/meniscus"
 Repository = "https://github.com/magic-bubblez/meniscus"
+Issues = "https://github.com/magic-bubblez/meniscus/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["meniscus"]

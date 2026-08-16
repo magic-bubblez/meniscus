@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
-from dotenv import load_dotenv
 from fastapi import FastAPI
 
-load_dotenv()
+from meniscus.home import load_env
+
+load_env()
 
 
 @asynccontextmanager

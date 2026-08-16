@@ -8,19 +8,17 @@ import re
 import threading
 import time
 from dataclasses import asdict
-from pathlib import Path
 
-from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 
 from meniscus.config import RETRIEVAL_DEFAULT_LIMIT
+from meniscus.home import load_env
 
 logger = logging.getLogger(__name__)
 
-# Background processor drains pending events so logging never blocks on LLM calls.
 _POLL_SECONDS = 3.0
 
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+load_env()
 
 MCP_INSTRUCTIONS = """\
 Meniscus is this person's private, long-term memory -- a structured record of
@@ -40,9 +38,8 @@ There are exactly two tools:
   session, or the raw source behind a fact). It returns structured facts in time
   order, each stamped with when it happened and its source event id -- NOT a
   finished answer; you read them and reply in your own voice.
-- `meniscus_log` -- the way to WRITE, and it is meant to be INVISIBLE. When
-  something is worth remembering, log it in the background and keep going -- do
-  NOT announce it, ask permission, or wait on it. Never make the person watch you
+- `meniscus_log` -- the way to WRITE, and it is meant to be INVISIBLE. Log every conversation in the background and keep going -- do
+  NOT announce it, do NOT ask permission and do NOT wait on it. Never make the person watch you
   save things.
 
 Meniscus has no date parser: when a request mentions a time ("last week", "in
@@ -53,45 +50,16 @@ and pass them to `meniscus_recall`.
 mcp = FastMCP("meniscus", instructions=MCP_INSTRUCTIONS)
 
 
-def _get_resources():
-    from meniscus.db import get_connection, init_db
-    from meniscus.exceptions import ModelUnavailableError
-    from meniscus.providers import get_embedding_model, get_model
-    from meniscus.startup import announce_embedding_state
-
-    conn = get_connection()
-    try:
-        init_db(conn)
-        announce_embedding_state()
-        # A missing model saves the event as pending rather than failing intake.
-        try:
-            model = get_model()
-        except (ModelUnavailableError, ImportError):
-            model = None
-        try:
-            embedding_model = get_embedding_model()
-        except (ModelUnavailableError, ImportError):
-            embedding_model = None
-    except Exception:
-        conn.close()
-        raise
-    return conn, model, embedding_model
-
-
 def _get_query_resources():
     from meniscus.db import get_connection, init_db
-    from meniscus.exceptions import ModelUnavailableError
-    from meniscus.providers import get_embedding_model
+    from meniscus.providers import get_embedding_if_available
     from meniscus.startup import announce_embedding_state
 
     conn = get_connection()
     try:
         init_db(conn)
         announce_embedding_state()
-        try:
-            embedding_model = get_embedding_model()
-        except (ModelUnavailableError, ImportError):
-            embedding_model = None
+        embedding_model = get_embedding_if_available()
     except Exception:
         conn.close()
         raise
@@ -121,23 +89,18 @@ def _process_loop() -> None:
     """
 
     from meniscus.db import get_connection, init_db
-    from meniscus.exceptions import ModelUnavailableError
     from meniscus.pipeline import process_pending_events
-    from meniscus.providers import get_embedding_model, get_model
+    from meniscus.providers import get_embedding_if_available, get_model_if_available
 
     conn = get_connection()
     init_db(conn)
-    try:
-        model = get_model()
-    except (ModelUnavailableError, ImportError):
-        model = None
-    try:
-        embedding_model = get_embedding_model()
-    except (ModelUnavailableError, ImportError):
-        embedding_model = None
+    model = get_model_if_available()
+    embedding_model = get_embedding_if_available()
 
     while True:
         try:
+            if model is None:
+                model = get_model_if_available()
             if model is not None:
                 process_pending_events(conn, model, embedding_model)
         except Exception as exc:  # never let the daemon die
@@ -147,12 +110,12 @@ def _process_loop() -> None:
 
 @mcp.tool()
 def meniscus_log(content: str, source: str = "mcp") -> str:
-    """Record something worth remembering into the person's memory, SILENTLY.
+    """Record EVERY CONVERSATION into the person's memory, SILENTLY.
 
-    Call this in the background after a meaningful moment -- a fact the person
+    Keep calling this in the background -- a fact the person
     shared, a decision, a preference, something they did or learned. It returns
-    instantly (it only captures the text; entities, threading, and summaries are
-    built in the background). Do NOT announce it, ask permission, or wait on it,
+    instantly because it captures raw text and processes memory in the background.
+    Do NOT announce it, do NOT ask permission, do NOT wait on it,
     and do not make the person watch you save things."""
 
     from meniscus.db import get_connection, init_db
@@ -162,7 +125,7 @@ def meniscus_log(content: str, source: str = "mcp") -> str:
     conn = get_connection()
     try:
         init_db(conn)
-        event_ids = ingest_event(conn, content, source)  # Stage 1 only — instant
+        event_ids = ingest_event(conn, content, source)
         return "Logged." if event_ids else "Already recorded."
     finally:
         conn.close()

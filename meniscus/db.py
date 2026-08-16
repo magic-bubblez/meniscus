@@ -8,21 +8,27 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Generator
 
-from meniscus.config import DB_PATH, EMBEDDING_DIMENSIONS, EMBEDDING_PROVIDER
+from meniscus.config import EMBEDDING_DIMENSIONS, EMBEDDING_PROVIDER
 from meniscus.exceptions import (
     DatabaseError,
     EmbeddingBackendUnavailableError,
     EmbeddingDimensionMismatchError,
 )
+from meniscus.home import DATABASE_FILENAME
 
 _VECTOR_MARKER = "-- VECTOR SEARCH"
 
 
 def get_db_path() -> Path:
-    """Resolve the database path, honoring MENISCUS_DB_PATH."""
+    """Resolve the database path inside the active Meniscus home."""
 
-    value = os.environ.get("MENISCUS_DB_PATH") or DB_PATH
-    path = Path(value).expanduser().resolve()
+    override = os.environ.get("MENISCUS_DB_PATH")
+    if override:
+        path = Path(override).expanduser().resolve()
+    else:
+        from meniscus.home import MENISCUS_HOME
+
+        path = MENISCUS_HOME / DATABASE_FILENAME
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
 

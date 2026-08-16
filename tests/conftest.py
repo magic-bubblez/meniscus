@@ -4,7 +4,15 @@ from pathlib import Path
 
 import pytest
 
-from meniscus import db
+from meniscus import config, db
+
+
+@pytest.fixture(autouse=True)
+def _default_model_config(monkeypatch: pytest.MonkeyPatch):
+    """Tests that build a FakeModel directly still need provenance fields set --
+    production ships no default, so tests supply their own, like a real config.toml would."""
+    monkeypatch.setattr(config, "DEFAULT_MODEL_PROVIDER", "openrouter")
+    monkeypatch.setattr(config, "MODEL", "test-model")
 
 
 @pytest.fixture

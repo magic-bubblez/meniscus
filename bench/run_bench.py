@@ -69,7 +69,7 @@ def run(dataset_path, selector, out_path):
     model, emb = get_model(), get_embedding_model()
 
     from meniscus.providers.openrouter import OpenRouterProvider
-    synth = OpenRouterProvider(model=_cfg.SYNTHESIS_MODEL)
+    synth = OpenRouterProvider(model=_cfg.MODEL)
     rows = []
     with open(out_path, "w") as fout:
         for k, inst in enumerate(data, 1):

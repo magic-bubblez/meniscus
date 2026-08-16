@@ -158,3 +158,12 @@ def test_init_db_skips_vec0_when_provider_none(conn):
         "SELECT name FROM sqlite_master WHERE name = 'fact_embeddings'"
     ).fetchone()
     assert row is None
+
+
+def test_default_db_path_follows_meniscus_home(tmp_path, monkeypatch):
+    from meniscus import home
+
+    monkeypatch.delenv("MENISCUS_DB_PATH", raising=False)
+    monkeypatch.setattr(home, "MENISCUS_HOME", tmp_path / "isolated-home")
+
+    assert db.get_db_path() == tmp_path / "isolated-home" / "meniscus.db"

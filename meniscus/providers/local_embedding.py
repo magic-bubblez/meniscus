@@ -7,6 +7,8 @@ import os
 from pathlib import Path
 
 os.environ.setdefault("HF_HUB_VERBOSITY", "error")
+os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
 
 from meniscus.config import EMBEDDING_DIMENSIONS
 from meniscus.embedding_interface import EmbeddingInterface
@@ -31,7 +33,6 @@ def _model_is_cached() -> bool:
     return any(root and (Path(root) / folder).exists() for root in roots)
 
 
-# Cached model -> load offline so startup never blocks on a Hugging Face network call.
 if _model_is_cached():
     os.environ.setdefault("HF_HUB_OFFLINE", "1")
     os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
@@ -50,8 +51,14 @@ class LocalEmbeddingProvider(EmbeddingInterface):
     def _load_model(self) -> None:
         try:
             from sentence_transformers import SentenceTransformer
+            from transformers.utils import logging as transformers_logging
 
-            self._model = SentenceTransformer(_LOCAL_MODEL_NAME)
+            transformers_logging.set_verbosity_error()
+            transformers_logging.disable_progress_bar()
+            self._model = SentenceTransformer(
+                _LOCAL_MODEL_NAME,
+                local_files_only=_model_is_cached(),
+            )
         except ImportError as exc:
             raise ModelUnavailableError(
                 "sentence-transformers package not installed. "
@@ -74,7 +81,11 @@ class LocalEmbeddingProvider(EmbeddingInterface):
         if self._model is None:
             self._load_model()
         try:
-            embeddings = self._model.encode(texts, normalize_embeddings=True)
+            embeddings = self._model.encode(
+                texts,
+                normalize_embeddings=True,
+                show_progress_bar=False,
+            )
             vectors = [row.tolist() for row in embeddings]
         except Exception as exc:
             raise ModelUnavailableError(f"Local embedding model failed: {exc}") from exc

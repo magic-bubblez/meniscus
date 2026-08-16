@@ -61,7 +61,7 @@ def _extraction_provenance() -> tuple[str, str]:
 
     from meniscus import config
 
-    return config.DEFAULT_MODEL_PROVIDER, config.OPENROUTER_MODEL
+    return config.DEFAULT_MODEL_PROVIDER, config.MODEL
 
 
 def _store_facts(
@@ -183,7 +183,8 @@ def process_pending_events(
 
     rows = conn.execute(
         "SELECT id, source, content, timestamp FROM events "
-        "WHERE extraction_status = 'pending' ORDER BY timestamp ASC, id ASC"
+        "WHERE extraction_status = ? ORDER BY timestamp ASC, id ASC",
+        (ExtractionStatus.PENDING,),
     ).fetchall()
     pending = [(int(r["id"]), r["source"], r["content"], r["timestamp"]) for r in rows]
     return _process_events_batch(
@@ -263,9 +264,9 @@ def import_and_process(
     placeholders = ",".join("?" for _ in event_ids)
     rows = conn.execute(
         f"SELECT id, source, content, timestamp FROM events "
-        f"WHERE id IN ({placeholders}) AND extraction_status = 'pending' "
+        f"WHERE id IN ({placeholders}) AND extraction_status = ? "
         f"ORDER BY timestamp ASC, id ASC",
-        event_ids,
+        [*event_ids, ExtractionStatus.PENDING],
     ).fetchall()
     pending = [(int(r["id"]), r["source"], r["content"], r["timestamp"]) for r in rows]
     _process_events_batch(

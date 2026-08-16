@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from meniscus import config
 from meniscus import fact_retrieval as fr
+from meniscus.exceptions import ModelUnavailableError
 from meniscus.fact_retrieval import Fact
 
 
@@ -174,3 +175,83 @@ def test_episode_browse_returns_all_sessions_in_window(conn):
 
 def test_episode_no_anchor_returns_empty(conn):
     assert fr.episode(conn, anchor_text="nothing was ever recorded") == []
+
+
+class _FailingEmbedding:
+    """An embedding model that is configured and expected, but cannot answer."""
+
+    def embed_query(self, text):
+        raise ModelUnavailableError("embedding backend is down")
+
+
+class _WorkingEmbedding:
+    def embed_query(self, text):
+        return [0.0] * config.EMBEDDING_DIMENSIONS
+
+
+def _collect_degraded(conn, embedding_model, monkeypatch, provider="local"):
+    monkeypatch.setattr(config, "EMBEDDING_PROVIDER", provider)
+    notes = []
+    fr.retrieve(conn, text="jwt", embedding_model=embedding_model, on_degraded=notes.append)
+    return notes
+
+
+def test_failed_embedding_reports_degraded_coverage(conn, monkeypatch):
+    """Losing the meaning door changes the answer, so the caller has to be told."""
+
+    notes = _collect_degraded(conn, _FailingEmbedding(), monkeypatch)
+
+    assert notes == [fr.MEANING_SEARCH_UNAVAILABLE]
+
+
+def test_missing_embedding_model_reports_degraded_coverage(conn, monkeypatch):
+    """A model that failed to load reaches retrieval as None — still a degradation."""
+
+    notes = _collect_degraded(conn, None, monkeypatch)
+
+    assert notes == [fr.MEANING_SEARCH_UNAVAILABLE]
+
+
+def test_embeddings_disabled_by_config_is_not_degraded(conn, monkeypatch):
+    """Keyword-only by choice is a deliberate mode, not a silent failure."""
+
+    notes = _collect_degraded(conn, None, monkeypatch, provider=config.EMBEDDING_DISABLED)
+
+    assert notes == []
+
+
+def test_healthy_embedding_reports_nothing(conn, monkeypatch):
+    notes = _collect_degraded(conn, _WorkingEmbedding(), monkeypatch)
+
+    assert notes == []
+
+
+def test_failed_embedding_still_returns_keyword_results(conn, monkeypatch):
+    """Degrading visibly must not mean returning nothing."""
+
+    monkeypatch.setattr(config, "EMBEDDING_PROVIDER", "local")
+    event_id = _add_event(conn, "auth work", "2026-01-15T12:00:00+00:00")
+    _add_fact(conn, event_id, "The person chose jwt for auth.", 0, [])
+    conn.commit()
+
+    notes = []
+    facts = fr.retrieve(
+        conn, text="jwt", embedding_model=_FailingEmbedding(), on_degraded=notes.append
+    )
+
+    assert facts
+    assert notes == [fr.MEANING_SEARCH_UNAVAILABLE]
+
+
+def test_episode_reports_degraded_coverage(conn, monkeypatch):
+    monkeypatch.setattr(config, "EMBEDDING_PROVIDER", "local")
+    notes = []
+
+    fr.episode(
+        conn,
+        anchor_text="jwt",
+        embedding_model=_FailingEmbedding(),
+        on_degraded=notes.append,
+    )
+
+    assert notes == [fr.MEANING_SEARCH_UNAVAILABLE]

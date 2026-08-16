@@ -51,4 +51,3 @@ def normalize_time_window(
     ):
         raise ValueError("start must be before or equal to end")
     return normalized_start, normalized_end
-

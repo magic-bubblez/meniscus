@@ -193,6 +193,37 @@ _BANNER = [
 
 _BANNER_COLORS = [24, 25, 68, 110, 175, 174]
 
+# Written by `men doctor`'s write probe, then rolled back — it must never persist.
+_WRITE_PROBE_MARKER = "meniscus-doctor-write-probe"
+
+_BACKGROUND_SERVICE_LABEL = "ai.meniscus.watch"
+_WATCH_ARGS = ["-m", "meniscus.cli.main", "watch"]
+# Both supervisors run the same command; the seed pass primes the cursor first.
+_WATCH_SUPERVISED_ARGS = [*_WATCH_ARGS, "--distill"]
+_WATCH_SEED_ARGS = [*_WATCH_ARGS, "--catch-up", "--once"]
+_SERVICE_START_GRACE_SECONDS = 1.5
+
+_MACOS = "Darwin"
+_LINUX = "Linux"
+_LAUNCHCTL = "launchctl"
+_SYSTEMCTL = "systemctl"
+# The one line of `launchctl print` / `systemctl is-active` output we depend on.
+_LAUNCHD_RUNNING_MARKER = "state = running"
+_SYSTEMD_ACTIVE_STATE = "active"
+_CAPTURE_OUT_LOG = "capture.out.log"
+_CAPTURE_ERR_LOG = "capture.err.log"
+_NOT_INSTALLED_NOTICE = "  • Background capture is not installed — nothing to stop."
+
+_SECONDS_PER_MINUTE = 60
+_SECONDS_PER_HOUR = 60 * _SECONDS_PER_MINUTE
+_SECONDS_PER_DAY = 24 * _SECONDS_PER_HOUR
+
+# `men status` reports the last event's age in the largest unit that stays readable.
+_AGE_JUST_NOW_SECONDS = 90
+_AGE_MINUTES_SECONDS = 90 * _SECONDS_PER_MINUTE
+_AGE_HOURS_SECONDS = 2 * _SECONDS_PER_DAY
+_STALE_CAPTURE_SECONDS = _SECONDS_PER_DAY
+
 
 def _print_banner() -> None:
     import sys
@@ -260,7 +291,7 @@ def doctor() -> None:
         line("database", False, f"could not resolve path: {exc}")
 
     provider = config.EMBEDDING_PROVIDER
-    if provider == "none":
+    if provider == config.EMBEDDING_DISABLED:
         line("sqlite-vec", None, "not required (EMBEDDING_PROVIDER=\"none\")")
     else:
         try:
@@ -280,7 +311,7 @@ def doctor() -> None:
                 "sqlite-vec",
                 False,
                 'not installed  →  uv tool install "meniscus[all]"  '
-                '(or set EMBEDDING_PROVIDER="none")',
+                f'(or set EMBEDDING_PROVIDER="{config.EMBEDDING_DISABLED}")',
             )
         except Exception as exc:
             line("sqlite-vec", False, f"installed but cannot load: {exc}")
@@ -319,7 +350,9 @@ def doctor() -> None:
     try:
         init_db(conn)
         line("startup", True, "database initializes cleanly")
-        startup_ok = True
+        write_ok, write_name, write_detail = _probe_write_path(conn)
+        line(write_name, write_ok, write_detail)
+        startup_ok = write_ok
     except MeniscusError as exc:
         line("startup", False, str(exc))
         startup_ok = False
@@ -621,7 +654,7 @@ def init() -> None:
     )
 
     if choice == "1":
-        _install_launchagent()
+        _install_background_service()
     elif choice == "2":
         click.echo("  → Run `men watch --catch-up --distill` to capture and process new sessions.")
     else:
@@ -771,77 +804,346 @@ def _init_doctor() -> None:
     try:
         init_db(conn)
         line(True, "startup", "database initializes cleanly")
+        line(*_probe_write_path(conn))
     except MeniscusError as exc:
         line(False, "startup", str(exc))
     finally:
         conn.close()
 
 
-def _install_launchagent() -> None:
-    """Write and load a macOS LaunchAgent for continuous capture and processing."""
-    import platform
-    import plistlib
-    import subprocess
-    import sys
-    from pathlib import Path
+def _probe_write_path(conn) -> tuple[bool, str, str]:
+    """Insert a throwaway event and roll it back.
 
-    if platform.system() != "Darwin":
-        click.echo("  • Background service is macOS-only.")
+    Capture is deliberately silent, so a broken write path produces no user-visible
+    signal — an obsolete trigger or a lost index can reject every insert while the
+    schema still opens and reads cleanly. Only a real insert exercises that path.
+    """
+
+    import sqlite3
+    from datetime import datetime, timezone
+
+    try:
+        conn.execute(
+            "INSERT INTO events (source, content, timestamp, content_hash) "
+            "VALUES (?, ?, ?, ?)",
+            (
+                _WRITE_PROBE_MARKER,
+                _WRITE_PROBE_MARKER,
+                datetime.now(timezone.utc).isoformat(),
+                _WRITE_PROBE_MARKER,
+            ),
+        )
+        return True, "write path", "events accept new rows"
+    except sqlite3.Error as exc:
+        return False, "write path", f"cannot record new events: {exc}"
+    finally:
+        # The probe must never survive: roll back whether it succeeded or failed.
+        conn.rollback()
+
+
+def _install_background_service() -> None:
+    """Install a per-user supervisor that keeps `men watch` running continuously."""
+
+    import platform
+    import sys
+
+    system = platform.system()
+    if system == _MACOS:
+        installer = _install_launchagent
+    elif system == _LINUX:
+        installer = _install_systemd_unit
+    else:
+        click.echo(f"  • No background service for {system}.")
         click.echo("    Run `men watch --catch-up` manually to start capturing.")
         return
 
-    from meniscus.home import MENISCUS_HOME
+    # Keep the environment's interpreter path, including a venv/uv-tool
+    # symlink. Resolving it can turn ``.../tools/meniscus/bin/python`` into the
+    # base Homebrew interpreter, which no longer has Meniscus installed.
+    python_path = sys.executable
+    if not _seed_capture(python_path):
+        return
+    installer(python_path)
 
-    python_path = str(Path(sys.executable).resolve())
-    label = "ai.meniscus.watch"
-    agents_dir = Path.home() / "Library" / "LaunchAgents"
-    agents_dir.mkdir(parents=True, exist_ok=True)
-    plist_path = agents_dir / f"{label}.plist"
 
-    plist = {
-        "Label": label,
-        "ProgramArguments": [
-            python_path,
-            "-m",
-            "meniscus.cli.main",
-            "watch",
-            "--distill",
-        ],
-        "RunAtLoad": True,
-        "KeepAlive": True,
-        "EnvironmentVariables": {"MENISCUS_HOME": str(MENISCUS_HOME)},
-        "StandardOutPath": str(MENISCUS_HOME / "capture.out.log"),
-        "StandardErrorPath": str(MENISCUS_HOME / "capture.err.log"),
-    }
+def _uninstall_background_service() -> None:
+    """Stop background capture and remove the supervisor, so it cannot come back.
 
-    if plist_path.exists():
-        subprocess.run(["launchctl", "unload", str(plist_path)], capture_output=True)
+    Stopping the process alone is not enough: both supervisors are configured to
+    restart it and to start it again at login. Turning capture off means removing
+    the definition, not just the running instance.
+    """
+
+    import platform
+
+    system = platform.system()
+    if system == _MACOS:
+        _uninstall_launchagent()
+    elif system == _LINUX:
+        _uninstall_systemd_unit()
+    else:
+        click.echo(f"  • No background service is installed on {system}.")
+
+
+def _launchd_service() -> str:
+    """The launchd service target: one spelling, used by install, stop, and status."""
+
+    import os
+
+    return f"gui/{os.getuid()}/{_BACKGROUND_SERVICE_LABEL}"
+
+
+def _launchagent_plist_path():
+    from pathlib import Path
+
+    return (
+        Path.home() / "Library" / "LaunchAgents" / f"{_BACKGROUND_SERVICE_LABEL}.plist"
+    )
+
+
+def _systemd_unit_name() -> str:
+    return f"{_BACKGROUND_SERVICE_LABEL}.service"
+
+
+def _systemd_unit_path():
+    from pathlib import Path
+
+    return Path.home() / ".config" / "systemd" / "user" / _systemd_unit_name()
+
+
+def _uninstall_launchagent() -> None:
+    import subprocess
+
+    service = _launchd_service()
+    plist_path = _launchagent_plist_path()
+
+    if not plist_path.exists():
+        click.echo(_NOT_INSTALLED_NOTICE)
+        return
+
+    subprocess.run([_LAUNCHCTL, "bootout", service], capture_output=True)
+    plist_path.unlink(missing_ok=True)
+    _report_stopped(_launchagent_running(), f"{_LAUNCHCTL} bootout {service}")
+
+
+def _uninstall_systemd_unit() -> None:
+    import shutil
+    import subprocess
+
+    unit_name = _systemd_unit_name()
+    unit_path = _systemd_unit_path()
+
+    if not unit_path.exists():
+        click.echo(_NOT_INSTALLED_NOTICE)
+        return
+
+    has_systemctl = shutil.which(_SYSTEMCTL) is not None
+    if has_systemctl:
+        subprocess.run(
+            [_SYSTEMCTL, "--user", "disable", "--now", unit_name], capture_output=True
+        )
+    unit_path.unlink(missing_ok=True)
+    if has_systemctl:
+        subprocess.run([_SYSTEMCTL, "--user", "daemon-reload"], capture_output=True)
+    _report_stopped(
+        _systemd_unit_active(unit_name),
+        f"{_SYSTEMCTL} --user disable --now {unit_name}",
+    )
+
+
+def _report_stopped(still_running: bool, manual: str) -> None:
+    if still_running:
+        click.echo("  ✗ Background capture is still running.")
+        click.echo(f"    Stop it manually with: {manual}")
+        return
+    click.echo("  ✓ Background capture stopped and removed")
+    click.echo("    Turn it back on with `men watch --start`.")
+
+
+def _launchagent_running() -> bool:
+    import subprocess
+
+    printed = subprocess.run(
+        [_LAUNCHCTL, "print", _launchd_service()], capture_output=True, text=True
+    )
+    return _LAUNCHD_RUNNING_MARKER in printed.stdout
+
+
+def _systemd_unit_active(unit_name: str) -> bool:
+    import shutil
+    import subprocess
+
+    if shutil.which(_SYSTEMCTL) is None:
+        return False
+    active = subprocess.run(
+        [_SYSTEMCTL, "--user", "is-active", unit_name], capture_output=True, text=True
+    )
+    return active.stdout.strip() == _SYSTEMD_ACTIVE_STATE
+
+
+def _seed_capture(python_path: str) -> bool:
+    """Capture existing history once, so the supervised run starts from a known cursor."""
+
+    import subprocess
 
     seed = subprocess.run(
-        [
-            python_path,
-            "-m",
-            "meniscus.cli.main",
-            "watch",
-            "--catch-up",
-            "--once",
-        ],
+        [python_path, *_WATCH_SEED_ARGS],
         capture_output=True,
         text=True,
     )
     if seed.returncode != 0:
         click.echo(f"  ✗ Could not initialize capture: {(seed.stderr or seed.stdout).strip()}")
-        return
+        return False
+    return True
+
+
+def _report_service(started: bool, detail: str, logs: str, manual: str) -> None:
+    """Report what the supervisor actually did — never assume a clean exit means running."""
+
+    if started:
+        click.echo("  ✓ Background service installed and started")
+        click.echo(f"    Logs → {logs}")
+    else:
+        click.echo(f"  ✗ Service did not stay running: {detail}")
+        click.echo(f"    Logs → {logs}")
+        click.echo(f"    Retry with: {manual}")
+
+
+def _install_launchagent(python_path: str) -> None:
+    """Write and bootstrap a macOS LaunchAgent for continuous capture and processing."""
+
+    import os
+    import plistlib
+    import subprocess
+    import time
+
+    from meniscus.home import MENISCUS_HOME
+
+    domain = f"gui/{os.getuid()}"
+    service = _launchd_service()
+    plist_path = _launchagent_plist_path()
+    plist_path.parent.mkdir(parents=True, exist_ok=True)
+    err_log = MENISCUS_HOME / _CAPTURE_ERR_LOG
+
+    plist = {
+        "Label": _BACKGROUND_SERVICE_LABEL,
+        "ProgramArguments": [python_path, *_WATCH_SUPERVISED_ARGS],
+        "RunAtLoad": True,
+        "KeepAlive": True,
+        "EnvironmentVariables": {"MENISCUS_HOME": str(MENISCUS_HOME)},
+        "StandardOutPath": str(MENISCUS_HOME / _CAPTURE_OUT_LOG),
+        "StandardErrorPath": str(err_log),
+    }
+
+    if plist_path.exists():
+        subprocess.run([_LAUNCHCTL, "bootout", service], capture_output=True)
 
     with plist_path.open("wb") as plist_file:
         plistlib.dump(plist, plist_file)
-    result = subprocess.run(["launchctl", "load", str(plist_path)], capture_output=True, text=True)
-    if result.returncode == 0:
-        click.echo("  ✓ Background service installed and started")
-        click.echo(f"    Logs → {MENISCUS_HOME}/capture.out.log")
-    else:
-        click.echo(f"  ✗ Service install failed: {result.stderr.strip()}")
-        click.echo(f"    Try manually: launchctl load {plist_path}")
+
+    result = subprocess.run(
+        [_LAUNCHCTL, "bootstrap", domain, str(plist_path)],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        _report_service(
+            False,
+            result.stderr.strip() or f"{_LAUNCHCTL} rejected the job",
+            str(err_log),
+            f"{_LAUNCHCTL} bootstrap {domain} {plist_path}",
+        )
+        return
+
+    subprocess.run([_LAUNCHCTL, "kickstart", "-k", service], capture_output=True)
+    # `bootstrap` only means launchd accepted the job. A job whose interpreter it
+    # cannot reach — a venv under a TCC-protected folder, say — exits immediately
+    # and would otherwise be reported as a success.
+    time.sleep(_SERVICE_START_GRACE_SECONDS)
+    _report_service(
+        _launchagent_running(),
+        _last_log_line(err_log) or "the process exited right after launch",
+        str(err_log),
+        f"{_LAUNCHCTL} kickstart -k {service}",
+    )
+
+
+# systemd captures stdout/stderr into the journal, so the unit declares no log paths.
+_SYSTEMD_UNIT_TEMPLATE = """\
+[Unit]
+Description=Meniscus continuous capture
+
+[Service]
+ExecStart={exec_start}
+Environment=MENISCUS_HOME={meniscus_home}
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
+"""
+
+
+def _install_systemd_unit(python_path: str) -> None:
+    """Write and enable a systemd --user unit for continuous capture and processing."""
+
+    import shutil
+    import subprocess
+    import time
+
+    from meniscus.home import MENISCUS_HOME
+
+    unit_name = _systemd_unit_name()
+    journal = f"journalctl --user -u {unit_name}"
+
+    if shutil.which(_SYSTEMCTL) is None:
+        click.echo("  • No systemd on this machine, so there is nothing to supervise the capture.")
+        click.echo("    Run `men watch --catch-up` manually, or supervise it with your init system.")
+        return
+
+    unit_path = _systemd_unit_path()
+    unit_path.parent.mkdir(parents=True, exist_ok=True)
+    unit_path.write_text(
+        _SYSTEMD_UNIT_TEMPLATE.format(
+            exec_start=" ".join([python_path, *_WATCH_SUPERVISED_ARGS]),
+            meniscus_home=MENISCUS_HOME,
+        )
+    )
+
+    subprocess.run([_SYSTEMCTL, "--user", "daemon-reload"], capture_output=True)
+    result = subprocess.run(
+        [_SYSTEMCTL, "--user", "enable", "--now", unit_name],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        _report_service(
+            False,
+            result.stderr.strip() or f"{_SYSTEMCTL} rejected the unit",
+            journal,
+            f"{_SYSTEMCTL} --user enable --now {unit_name}",
+        )
+        return
+
+    # `Restart=always` means a unit that crash-loops still reports success from
+    # `enable --now`; only a second look tells us it stayed up.
+    time.sleep(_SERVICE_START_GRACE_SECONDS)
+    _report_service(
+        _systemd_unit_active(unit_name),
+        "the unit is not active",
+        journal,
+        f"{_SYSTEMCTL} --user restart {unit_name}",
+    )
+
+
+def _last_log_line(path) -> str:
+    """Return the last non-empty line of a log, for reporting why a service died."""
+
+    try:
+        lines = [line.strip() for line in path.read_text().splitlines() if line.strip()]
+    except OSError:
+        return ""
+    return lines[-1] if lines else ""
 
 
 def _wire_mcp_tools(men_mcp_path: str) -> None:
@@ -928,7 +1230,8 @@ def _get_retrieval_resources():
         model = get_model_if_available()
         embedding_model = get_embedding_if_available()
         embedding_ready = (
-            config.EMBEDDING_PROVIDER == "none" or embedding_model is not None
+            config.EMBEDDING_PROVIDER == config.EMBEDDING_DISABLED
+            or embedding_model is not None
         )
     except Exception:
         conn.close()
@@ -1064,10 +1367,29 @@ def process() -> None:
 @click.option("--once", is_flag=True, help="Capture new turns once and exit (no tailing).")
 @click.option("--distill", is_flag=True, help="Also extract facts (LLM cost); default captures raw only.")
 @click.option("--interval", default=3.0, show_default=True, help="Seconds between polls when tailing.")
-def watch(dry_run: bool, catch_up: bool, once: bool, distill: bool, interval: float) -> None:
+@click.option("--start", is_flag=True, help="Install and start background capture, then exit.")
+@click.option("--stop", is_flag=True, help="Stop background capture and remove the service.")
+def watch(
+    dry_run: bool,
+    catch_up: bool,
+    once: bool,
+    distill: bool,
+    interval: float,
+    start: bool,
+    stop: bool,
+) -> None:
     """Silently capture Claude Code and Codex conversations into memory."""
 
     import time as _time
+
+    if start and stop:
+        raise click.UsageError("--start and --stop cannot be combined.")
+    if stop:
+        _uninstall_background_service()
+        return
+    if start:
+        _install_background_service()
+        return
 
     from meniscus.db import get_connection, init_db
     from meniscus.event_intake import ingest_event
@@ -1224,6 +1546,12 @@ def ask(question: str, as_json: bool, limit: int | None) -> None:
             model_ready = False
             params = RetrievalParams(text=question)
 
+        degraded: list[str] = []
+
+        def note_degraded(note: str) -> None:
+            if note not in degraded:
+                degraded.append(note)
+
         if params.text:
             status("Searching your memory…")
             facts = retrieve(
@@ -1233,6 +1561,7 @@ def ask(question: str, as_json: bool, limit: int | None) -> None:
                 end=params.end,
                 limit=resolved_limit,
                 embedding_model=embedding_model,
+                on_degraded=note_degraded,
             )
         else:
             status("Looking through recent memory…")
@@ -1245,8 +1574,16 @@ def ask(question: str, as_json: bool, limit: int | None) -> None:
 
         facts_payload = [asdict(fact) for fact in facts]
         if as_json:
-            click.echo(json.dumps({"facts": facts_payload, "count": len(facts)}))
+            click.echo(
+                json.dumps(
+                    {"facts": facts_payload, "count": len(facts), "degraded": degraded}
+                    if degraded
+                    else {"facts": facts_payload, "count": len(facts)}
+                )
+            )
             return
+        for note in degraded:
+            click.echo(f"  ⚠ {note}", err=True)
         if model is None:
             click.echo(
                 "Note: no LLM configured, so this shows raw matched facts instead of "
@@ -1439,11 +1776,24 @@ def show_event(event_id: int) -> None:
             "ORDER BY en.canonical_name",
             (event_id,),
         ).fetchall()
+        # Every fact carries the model that wrote it; surface it so attribution is
+        # auditable without dropping into `men sql`.
+        extractions = conn.execute(
+            "SELECT provider, model, prompt_version, extracted_at "
+            "FROM extractions WHERE event_id = ? ORDER BY id",
+            (event_id,),
+        ).fetchall()
+
         click.echo(f"Event #{event['id']}")
         click.echo(f"  Source:   {event['source']}")
         click.echo(f"  Time:     {event['timestamp']}")
         click.echo(f"  Status:   {event['extraction_status']}")
         click.echo(f"  Entities: {', '.join(row['canonical_name'] for row in entities)}")
+        for row in extractions:
+            click.echo(
+                f"  Facts by: {row['provider']}/{row['model']} "
+                f"({row['prompt_version']}) at {row['extracted_at']}"
+            )
         click.echo("")
         click.echo(event["content"])
     finally:
@@ -1469,11 +1819,13 @@ def status() -> None:
         ).fetchone()[0]
         fact_count = conn.execute("SELECT COUNT(*) FROM facts").fetchone()[0]
         entity_count = conn.execute("SELECT COUNT(*) FROM entities").fetchone()[0]
+        latest = conn.execute("SELECT MAX(timestamp) FROM events").fetchone()[0]
         click.echo("Meniscus Status")
         click.echo(f"  Events:   {event_count} ({completed_count} completed, {pending_count} pending)")
+        click.echo(f"  Last event: {_describe_age(latest)}")
         click.echo(f"  Facts:    {fact_count}")
         click.echo(f"  Entities: {entity_count}")
-        if config.EMBEDDING_PROVIDER == "none":
+        if config.EMBEDDING_PROVIDER == config.EMBEDDING_DISABLED:
             click.echo("  Embeddings: disabled")
         else:
             embedding_count = conn.execute("SELECT COUNT(*) FROM fact_embeddings").fetchone()[0]
@@ -1485,6 +1837,33 @@ def status() -> None:
             )
     finally:
         conn.close()
+
+
+def _describe_age(timestamp: str | None) -> str:
+    """Render how long ago an event landed, so a stalled capture is visible at a glance."""
+
+    from datetime import datetime, timezone
+
+    if not timestamp:
+        return "never — nothing captured yet"
+    try:
+        moment = datetime.fromisoformat(timestamp)
+    except ValueError:
+        return timestamp
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+
+    seconds = (datetime.now(timezone.utc) - moment).total_seconds()
+    if seconds < _AGE_JUST_NOW_SECONDS:
+        age = "just now"
+    elif seconds < _AGE_MINUTES_SECONDS:
+        age = f"{round(seconds / _SECONDS_PER_MINUTE)}m ago"
+    elif seconds < _AGE_HOURS_SECONDS:
+        age = f"{round(seconds / _SECONDS_PER_HOUR)}h ago"
+    else:
+        age = f"{round(seconds / _SECONDS_PER_DAY)}d ago"
+    stale = "  ← capture may have stopped" if seconds > _STALE_CAPTURE_SECONDS else ""
+    return f"{timestamp} ({age}){stale}"
 
 
 _SHADOW_SUFFIXES = (

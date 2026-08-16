@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
+import platform
+import plistlib
 import shutil
 import stat
 import subprocess
+from pathlib import Path
 
 from click.testing import CliRunner
 
@@ -370,3 +374,329 @@ def test_mcp_wiring_uses_user_scope_for_claude(monkeypatch):
             "/Users/test/.local/bin/men-mcp",
         ],
     ]
+
+
+def _stub_service_install(tmp_path, monkeypatch, system, *, running=True, which=True):
+    """Install a fake supervisor toolchain and return the recorded command list."""
+
+    import shutil
+    import time
+
+    from meniscus import home
+
+    tool_python = tmp_path / "uv-tools" / "meniscus" / "bin" / "python"
+    base_python = tmp_path / "homebrew" / "bin" / "python3"
+    tool_python.parent.mkdir(parents=True, exist_ok=True)
+    base_python.parent.mkdir(parents=True, exist_ok=True)
+    base_python.touch()
+    if not tool_python.exists():
+        tool_python.symlink_to(base_python)
+
+    calls = []
+
+    def run(args, **kwargs):
+        calls.append(args)
+        if args[:2] == ["launchctl", "print"]:
+            return subprocess.CompletedProcess(
+                args, 0, "state = running\n" if running else "state = exited\n", ""
+            )
+        if args[:3] == ["systemctl", "--user", "is-active"]:
+            return subprocess.CompletedProcess(
+                args, 0, "active\n" if running else "failed\n", ""
+            )
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr(platform, "system", lambda: system)
+    monkeypatch.setattr(Path, "home", classmethod(lambda _cls: tmp_path))
+    monkeypatch.setattr(home, "MENISCUS_HOME", tmp_path / ".meniscus")
+    monkeypatch.setattr(cli_main.sys, "executable", str(tool_python))
+    monkeypatch.setattr(subprocess, "run", run)
+    monkeypatch.setattr(shutil, "which", lambda _name: "/usr/bin/systemctl" if which else None)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    return calls, tool_python
+
+
+def test_launchagent_preserves_uv_tool_python_symlink(tmp_path, monkeypatch):
+    calls, tool_python = _stub_service_install(tmp_path, monkeypatch, "Darwin")
+
+    cli_main._install_background_service()
+
+    seed = next(args for args in calls if "--once" in args)
+    assert seed[0] == str(tool_python)
+    plist_path = tmp_path / "Library" / "LaunchAgents" / "ai.meniscus.watch.plist"
+    with plist_path.open("rb") as plist_file:
+        plist = plistlib.load(plist_file)
+    assert plist["ProgramArguments"][0] == str(tool_python)
+    assert [
+        "launchctl",
+        "bootstrap",
+        f"gui/{os.getuid()}",
+        str(plist_path),
+    ] in calls
+
+
+def test_launchagent_reports_success_only_when_job_stays_running(tmp_path, monkeypatch, capsys):
+    _stub_service_install(tmp_path, monkeypatch, "Darwin", running=True)
+
+    cli_main._install_background_service()
+
+    assert "installed and started" in capsys.readouterr().out
+
+
+def test_launchagent_reports_failure_when_job_dies(tmp_path, monkeypatch, capsys):
+    """`bootstrap` succeeding only means launchd accepted the job, not that it runs."""
+
+    _stub_service_install(tmp_path, monkeypatch, "Darwin", running=False)
+
+    cli_main._install_background_service()
+
+    assert "did not stay running" in capsys.readouterr().out
+
+
+def test_linux_installs_systemd_user_unit(tmp_path, monkeypatch, capsys):
+    calls, tool_python = _stub_service_install(tmp_path, monkeypatch, "Linux")
+
+    cli_main._install_background_service()
+
+    unit = tmp_path / ".config" / "systemd" / "user" / "ai.meniscus.watch.service"
+    body = unit.read_text()
+    assert f"ExecStart={tool_python} -m meniscus.cli.main watch --distill" in body
+    assert f"Environment=MENISCUS_HOME={tmp_path / '.meniscus'}" in body
+    assert ["systemctl", "--user", "enable", "--now", "ai.meniscus.watch.service"] in calls
+    assert "installed and started" in capsys.readouterr().out
+
+
+def test_linux_without_systemd_falls_back_to_manual(tmp_path, monkeypatch, capsys):
+    _stub_service_install(tmp_path, monkeypatch, "Linux", which=False)
+
+    cli_main._install_background_service()
+
+    assert "men watch --catch-up" in capsys.readouterr().out
+    assert not (tmp_path / ".config" / "systemd").exists()
+
+
+def test_unsupported_platform_falls_back_to_manual(tmp_path, monkeypatch, capsys):
+    _stub_service_install(tmp_path, monkeypatch, "Windows")
+
+    cli_main._install_background_service()
+
+    assert "men watch --catch-up" in capsys.readouterr().out
+
+
+def test_watch_start_installs_the_service(tmp_path, monkeypatch):
+    calls, tool_python = _stub_service_install(tmp_path, monkeypatch, "Darwin", running=True)
+
+    result = CliRunner().invoke(cli, ["watch", "--start"])
+
+    assert result.exit_code == 0
+    plist_path = tmp_path / "Library" / "LaunchAgents" / "ai.meniscus.watch.plist"
+    assert plist_path.exists()
+    assert "installed and started" in result.output
+
+
+def test_watch_start_and_stop_are_mutually_exclusive(tmp_path, monkeypatch):
+    _stub_service_install(tmp_path, monkeypatch, "Darwin")
+
+    result = CliRunner().invoke(cli, ["watch", "--start", "--stop"])
+
+    assert result.exit_code != 0
+    assert "cannot be combined" in result.output
+
+
+def test_watch_start_stop_start_round_trips(tmp_path, monkeypatch):
+    """Capture must be switchable off and back on without re-running `men init`."""
+
+    plist_path = tmp_path / "Library" / "LaunchAgents" / "ai.meniscus.watch.plist"
+
+    _stub_service_install(tmp_path, monkeypatch, "Darwin", running=True)
+    CliRunner().invoke(cli, ["watch", "--start"])
+    assert plist_path.exists()
+
+    _stub_service_install(tmp_path, monkeypatch, "Darwin", running=False)
+    CliRunner().invoke(cli, ["watch", "--stop"])
+    assert not plist_path.exists()
+
+    _stub_service_install(tmp_path, monkeypatch, "Darwin", running=True)
+    CliRunner().invoke(cli, ["watch", "--start"])
+    assert plist_path.exists()
+
+
+def test_watch_stop_removes_the_launchagent(tmp_path, monkeypatch):
+    """Stopping must delete the definition: KeepAlive and RunAtLoad bring it back otherwise."""
+
+    calls, _ = _stub_service_install(tmp_path, monkeypatch, "Darwin", running=False)
+    plist_path = tmp_path / "Library" / "LaunchAgents" / "ai.meniscus.watch.plist"
+    plist_path.parent.mkdir(parents=True)
+    plist_path.write_bytes(b"stub")
+
+    result = CliRunner().invoke(cli, ["watch", "--stop"])
+
+    assert result.exit_code == 0
+    assert not plist_path.exists()
+    assert ["launchctl", "bootout", f"gui/{os.getuid()}/ai.meniscus.watch"] in calls
+    assert "stopped and removed" in result.output
+
+
+def test_watch_stop_removes_the_systemd_unit(tmp_path, monkeypatch):
+    calls, _ = _stub_service_install(tmp_path, monkeypatch, "Linux", running=False)
+    unit_path = tmp_path / ".config" / "systemd" / "user" / "ai.meniscus.watch.service"
+    unit_path.parent.mkdir(parents=True)
+    unit_path.write_text("stub")
+
+    result = CliRunner().invoke(cli, ["watch", "--stop"])
+
+    assert result.exit_code == 0
+    assert not unit_path.exists()
+    assert ["systemctl", "--user", "disable", "--now", "ai.meniscus.watch.service"] in calls
+    assert "stopped and removed" in result.output
+
+
+def test_watch_stop_when_nothing_is_installed(tmp_path, monkeypatch):
+    _stub_service_install(tmp_path, monkeypatch, "Darwin", running=False)
+
+    result = CliRunner().invoke(cli, ["watch", "--stop"])
+
+    assert result.exit_code == 0
+    assert "not installed" in result.output
+
+
+def test_watch_stop_reports_a_service_that_survives(tmp_path, monkeypatch):
+    """Removing the file is not proof the process died."""
+
+    _stub_service_install(tmp_path, monkeypatch, "Darwin", running=True)
+    plist_path = tmp_path / "Library" / "LaunchAgents" / "ai.meniscus.watch.plist"
+    plist_path.parent.mkdir(parents=True)
+    plist_path.write_bytes(b"stub")
+
+    result = CliRunner().invoke(cli, ["watch", "--stop"])
+
+    assert "still running" in result.output
+
+
+def test_watch_stop_does_not_touch_the_database(tmp_path, monkeypatch):
+    """`--stop` is service-only: it must not open or migrate memory as a side effect."""
+
+    _stub_service_install(tmp_path, monkeypatch, "Darwin", running=False)
+
+    def fail():
+        raise AssertionError("--stop opened the database")
+
+    monkeypatch.setattr(db, "get_connection", fail)
+
+    result = CliRunner().invoke(cli, ["watch", "--stop"])
+
+    assert result.exit_code == 0
+
+
+def test_install_then_stop_round_trips(tmp_path, monkeypatch):
+    """The full service lifecycle: install leaves a definition, stop removes it."""
+
+    _stub_service_install(tmp_path, monkeypatch, "Darwin", running=True)
+    plist_path = tmp_path / "Library" / "LaunchAgents" / "ai.meniscus.watch.plist"
+
+    cli_main._install_background_service()
+    assert plist_path.exists()
+
+    _stub_service_install(tmp_path, monkeypatch, "Darwin", running=False)
+    CliRunner().invoke(cli, ["watch", "--stop"])
+
+    assert not plist_path.exists()
+
+
+def test_write_probe_passes_on_a_healthy_database(tmp_path, monkeypatch):
+    _, conn = _open_cli_db(tmp_path, monkeypatch)
+    try:
+        ok, name, detail = cli_main._probe_write_path(conn)
+
+        assert ok
+        assert name == "write path"
+        assert "accept" in detail
+    finally:
+        conn.close()
+
+
+def test_write_probe_leaves_no_trace(tmp_path, monkeypatch):
+    _, conn = _open_cli_db(tmp_path, monkeypatch)
+    try:
+        cli_main._probe_write_path(conn)
+
+        assert conn.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 0
+    finally:
+        conn.close()
+
+
+def test_write_probe_catches_a_broken_write_path(tmp_path, monkeypatch):
+    """The check that would have caught a rejected insert behind a clean-looking schema."""
+
+    _, conn = _open_cli_db(tmp_path, monkeypatch)
+    try:
+        conn.executescript(
+            "CREATE TRIGGER reject_writes BEFORE INSERT ON events BEGIN "
+            "SELECT RAISE(ABORT, 'no such table: main.events_fts'); END;"
+        )
+
+        ok, _name, detail = cli_main._probe_write_path(conn)
+
+        assert not ok
+        assert "cannot record new events" in detail
+    finally:
+        conn.close()
+
+
+def test_status_reports_last_event_age(tmp_path, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    monkeypatch.setattr(config, "EMBEDDING_PROVIDER", "none")
+    path, conn = _open_cli_db(tmp_path, monkeypatch)
+    recent = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
+    _insert_event(conn, "recent turn", recent)
+    conn.commit()
+    conn.close()
+
+    result = CliRunner().invoke(cli, ["status"], env={"MENISCUS_DB_PATH": str(path)})
+
+    assert result.exit_code == 0
+    assert "Last event:" in result.output
+    assert "10m ago" in result.output
+
+
+def test_status_flags_a_stalled_capture(tmp_path, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    monkeypatch.setattr(config, "EMBEDDING_PROVIDER", "none")
+    path, conn = _open_cli_db(tmp_path, monkeypatch)
+    stale = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()
+    _insert_event(conn, "old turn", stale)
+    conn.commit()
+    conn.close()
+
+    result = CliRunner().invoke(cli, ["status"], env={"MENISCUS_DB_PATH": str(path)})
+
+    assert "5d ago" in result.output
+    assert "capture may have stopped" in result.output
+
+
+def test_status_on_an_empty_database(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "EMBEDDING_PROVIDER", "none")
+    path, conn = _open_cli_db(tmp_path, monkeypatch)
+    conn.close()
+
+    result = CliRunner().invoke(cli, ["status"], env={"MENISCUS_DB_PATH": str(path)})
+
+    assert result.exit_code == 0
+    assert "nothing captured yet" in result.output
+
+
+def test_show_event_reports_the_model_that_wrote_its_facts(tmp_path, monkeypatch):
+    path, conn = _open_cli_db(tmp_path, monkeypatch)
+    event_id = _insert_event(conn, "a turn worth remembering", "2026-01-15T12:00:00+00:00")
+    _insert_fact(conn, event_id, "The person shipped Meniscus.", [])
+    conn.commit()
+    conn.close()
+
+    result = CliRunner().invoke(
+        cli, ["show", "event", str(event_id)], env={"MENISCUS_DB_PATH": str(path)}
+    )
+
+    assert result.exit_code == 0
+    assert "Facts by: p/m (v) at 2026-01-01" in result.output

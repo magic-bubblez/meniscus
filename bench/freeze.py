@@ -30,13 +30,10 @@ from meniscus.spend_gate import estimate_cost_usd  # noqa: E402
 from meniscus.providers import get_embedding_model, get_model  # noqa: E402
 
 import meniscus.db as _db  # noqa: E402
-import meniscus.providers as _p  # noqa: E402
 import meniscus.providers.local_embedding as _le  # noqa: E402
 
 _db.EMBEDDING_PROVIDER = "local"
 _db.EMBEDDING_DIMENSIONS = 768
-_p.EMBEDDING_PROVIDER = "local"
-_p.EMBEDDING_DIMENSIONS = 768
 _le.EMBEDDING_DIMENSIONS = 768
 
 MEM_DIR = ROOT / "bench" / "memories"
@@ -147,10 +144,9 @@ def freeze(dataset_path: str, count: int, shard_index: int = 0, shard_count: int
 
     _override = os.environ.get("MENISCUS_FREEZE_MODEL")
     if _override:
-        from meniscus.providers.openrouter import OpenRouterProvider
-        model, model_slug = OpenRouterProvider(model=_override), _override
+        model, model_slug = get_model("openrouter", _override), _override
     else:
-        model, model_slug = get_model(), _cfg.OPENROUTER_MODEL
+        model, model_slug = get_model(), _cfg.MODEL
     embedding_model = get_embedding_model()
     provider_label = _cfg.DEFAULT_MODEL_PROVIDER
     budget = _cfg.MAX_RUN_COST_USD

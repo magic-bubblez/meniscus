@@ -6,9 +6,13 @@ import os
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Generator
+from typing import Callable, Generator
 
-from meniscus.config import EMBEDDING_DIMENSIONS, EMBEDDING_PROVIDER
+from meniscus.config import (
+    EMBEDDING_DIMENSIONS,
+    EMBEDDING_DISABLED,
+    EMBEDDING_PROVIDER,
+)
 from meniscus.exceptions import (
     DatabaseError,
     EmbeddingBackendUnavailableError,
@@ -17,6 +21,8 @@ from meniscus.exceptions import (
 from meniscus.home import DATABASE_FILENAME
 
 _VECTOR_MARKER = "-- VECTOR SEARCH"
+_SCHEMA_VERSION_KEY = "schema_version"
+_EMBEDDING_DIMENSIONS_KEY = "embedding_dimensions"
 
 
 def get_db_path() -> Path:
@@ -90,10 +96,11 @@ def init_db(conn: sqlite3.Connection) -> None:
         conn.execute(
             "CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
         )
+        _migrate_schema(conn)
     except sqlite3.Error as exc:
         raise DatabaseError(f"Failed to initialize schema: {exc}") from exc
 
-    if EMBEDDING_PROVIDER != "none":
+    if EMBEDDING_PROVIDER != EMBEDDING_DISABLED:
         try:
             import sqlite_vec
 
@@ -108,7 +115,7 @@ def init_db(conn: sqlite3.Connection) -> None:
             raise EmbeddingBackendUnavailableError(
                 f"Embedding provider {EMBEDDING_PROVIDER!r} is configured but "
                 "the sqlite-vec extension could not be loaded. Install "
-                'sqlite-vec, or set EMBEDDING_PROVIDER="none" to run in the '
+                f'sqlite-vec, or set EMBEDDING_PROVIDER="{EMBEDDING_DISABLED}" to run in the '
                 "deliberate disabled mode."
             ) from exc
 
@@ -120,15 +127,72 @@ def init_db(conn: sqlite3.Connection) -> None:
     _validate_or_record_embedding_dimensions(conn)
 
 
+def _migration_001_drop_events_fts(conn: sqlite3.Connection) -> None:
+    """Remove the raw-event full-text index left behind by pre-facts-only databases.
+
+    Older Meniscus databases indexed raw events in ``events_fts``.  The
+    facts-only schema removed that virtual table and its triggers, but
+    ``CREATE ... IF NOT EXISTS`` can only add to an existing database — it
+    never removes what a newer schema dropped.  A database whose ``events_fts``
+    table was removed while its triggers survived stays readable while every
+    new event insert fails with ``no such table: main.events_fts``.
+
+    The raw events themselves are untouched; only the obsolete index and its
+    write hooks are removed.  Facts continue to be indexed by the current
+    ``facts_fts`` triggers declared in ``schema.sql``.
+    """
+
+    conn.execute("DROP TRIGGER IF EXISTS events_fts_insert")
+    conn.execute("DROP TRIGGER IF EXISTS events_fts_delete")
+    conn.execute("DROP TABLE IF EXISTS events_fts")
+
+
+# Ordered migrations that converge an existing database on the current schema.
+# Append a new (version, migration) pair — never renumber or edit a shipped one —
+# and raise SCHEMA_VERSION to match.
+_MIGRATIONS: tuple[tuple[int, Callable[[sqlite3.Connection], None]], ...] = (
+    (1, _migration_001_drop_events_fts),
+)
+
+SCHEMA_VERSION = max(version for version, _ in _MIGRATIONS)
+
+
+def _migrate_schema(conn: sqlite3.Connection) -> None:
+    """Run every migration newer than the database's recorded schema version."""
+
+    row = conn.execute(
+        "SELECT value FROM meta WHERE key = ?", (_SCHEMA_VERSION_KEY,)
+    ).fetchone()
+    try:
+        current = int(row[0]) if row is not None else 0
+    except (TypeError, ValueError):
+        current = 0
+
+    if current >= SCHEMA_VERSION:
+        return
+
+    # SQLite makes DDL transactional, so a partially applied migration set can
+    # never be recorded as complete.
+    with transactional(conn) as txn:
+        for version, migration in _MIGRATIONS:
+            if version > current:
+                migration(txn)
+        txn.execute(
+            "INSERT INTO meta (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (_SCHEMA_VERSION_KEY, str(SCHEMA_VERSION)),
+        )
+
+
 def _validate_or_record_embedding_dimensions(conn: sqlite3.Connection) -> None:
     row = conn.execute(
-        "SELECT value FROM meta WHERE key = 'embedding_dimensions'"
+        "SELECT value FROM meta WHERE key = ?", (_EMBEDDING_DIMENSIONS_KEY,)
     ).fetchone()
     if row is None:
         with transactional(conn) as txn:
             txn.execute(
                 "INSERT INTO meta (key, value) VALUES (?, ?)",
-                ("embedding_dimensions", str(EMBEDDING_DIMENSIONS)),
+                (_EMBEDDING_DIMENSIONS_KEY, str(EMBEDDING_DIMENSIONS)),
             )
         return
 

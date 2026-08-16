@@ -19,6 +19,6 @@ def announce_embedding_state() -> None:
     global _embedding_notice_shown
     if _embedding_notice_shown:
         return
-    if config.EMBEDDING_PROVIDER == "none":
+    if config.EMBEDDING_PROVIDER == config.EMBEDDING_DISABLED:
         print(_EMBEDDING_NOTICE, file=sys.stderr)
     _embedding_notice_shown = True

@@ -165,28 +165,47 @@ def meniscus_recall(
     from meniscus.fact_retrieval import episode, get_event, recent_facts, retrieve
 
     conn, embedding_model = _get_query_resources()
+    # Reduced coverage travels with the result: an agent that is told nothing would
+    # report a keyword-only answer as a complete one.
+    degraded: list[str] = []
+
+    def note_degraded(note: str) -> None:
+        if note not in degraded:
+            degraded.append(note)
+
+    def payload(body: dict) -> str:
+        return json.dumps({**body, "degraded": degraded} if degraded else body)
+
     try:
         if source_event is not None:
             event = get_event(conn, source_event)
             if event is None:
                 return json.dumps({"error": f"Event {source_event} not found"})
-            payload = {**event, "facts": [asdict(f) for f in event["facts"]]}
-            return json.dumps({"kind": "event", "event": payload})
+            found = {**event, "facts": [asdict(f) for f in event["facts"]]}
+            return json.dumps({"kind": "event", "event": found})
 
         if around is not None:
             anchor = {"at": around} if _ISO_ANCHOR_RE.match(around) else {"anchor_text": around}
-            episodes = episode(conn, embedding_model=embedding_model, **anchor)
-            return json.dumps(
+            episodes = episode(
+                conn, embedding_model=embedding_model, on_degraded=note_degraded, **anchor
+            )
+            return payload(
                 {"kind": "episode", "episodes": [asdict(e) for e in episodes], "count": len(episodes)}
             )
 
         if query:
             facts = retrieve(
-                conn, text=query, start=start, end=end, limit=limit, embedding_model=embedding_model
+                conn,
+                text=query,
+                start=start,
+                end=end,
+                limit=limit,
+                embedding_model=embedding_model,
+                on_degraded=note_degraded,
             )
         else:
             facts = recent_facts(conn, start=start, end=end, limit=limit)
-        return json.dumps({"kind": "facts", "facts": [asdict(f) for f in facts], "count": len(facts)})
+        return payload({"kind": "facts", "facts": [asdict(f) for f in facts], "count": len(facts)})
     finally:
         conn.close()
 

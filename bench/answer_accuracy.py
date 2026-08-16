@@ -21,19 +21,15 @@ _cfg.EMBEDDING_PROVIDER = "local"
 _cfg.EMBEDDING_DIMENSIONS = 768
 
 from meniscus.db import get_connection, init_db  # noqa: E402
-from meniscus.providers import get_embedding_model  # noqa: E402
-from meniscus.providers.openrouter import OpenRouterProvider  # noqa: E402
+from meniscus.providers import get_embedding_model, get_model  # noqa: E402
 from meniscus import fact_retrieval as fr  # noqa: E402
 from meniscus.tokens import estimate_tokens  # noqa: E402
 
 import meniscus.db as _db  # noqa: E402
-import meniscus.providers as _p  # noqa: E402
 import meniscus.providers.local_embedding as _le  # noqa: E402
 
 _db.EMBEDDING_PROVIDER = "local"
 _db.EMBEDDING_DIMENSIONS = 768
-_p.EMBEDDING_PROVIDER = "local"
-_p.EMBEDDING_DIMENSIONS = 768
 _le.EMBEDDING_DIMENSIONS = 768
 
 MEM_DIR = ROOT / "bench" / "memories"
@@ -79,8 +75,8 @@ def _cost(prompt: str, out_tokens: int, model: str) -> float:
 
 def main(limit: int | None = None) -> None:
     embedding_model = get_embedding_model()
-    reader = OpenRouterProvider(model=READER_MODEL)
-    judge = OpenRouterProvider(model=JUDGE_MODEL)
+    reader = get_model("openrouter", READER_MODEL)
+    judge = get_model("openrouter", JUDGE_MODEL)
 
     per_type: dict[str, list[float]] = {}
     reductions: list[float] = []

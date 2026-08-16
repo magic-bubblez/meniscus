@@ -132,7 +132,7 @@ def get_embedding_model(provider_name: str | None = None) -> EmbeddingInterface 
     """Instantiate and validate an embedding provider."""
 
     name = provider_name or config.EMBEDDING_PROVIDER
-    if name == "none":
+    if name == config.EMBEDDING_DISABLED:
         return None
 
     factory = _EMBEDDING_REGISTRY.get(name)

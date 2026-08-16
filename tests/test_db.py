@@ -82,6 +82,105 @@ def test_init_db_idempotent(conn):
     assert count == 0
 
 
+def _make_legacy_events_fts(conn, *, drop_table: bool) -> None:
+    """Recreate a pre-facts-only database: events indexed by an events_fts table."""
+
+    conn.executescript(
+        """
+        CREATE VIRTUAL TABLE events_fts USING fts5(content);
+        CREATE TRIGGER events_fts_insert AFTER INSERT ON events BEGIN
+            INSERT INTO events_fts(rowid, content) VALUES (new.id, new.content);
+        END;
+        CREATE TRIGGER events_fts_delete AFTER DELETE ON events BEGIN
+            INSERT INTO events_fts(events_fts, rowid, content)
+                VALUES('delete', old.id, old.content);
+        END;
+        """
+    )
+    conn.execute("DELETE FROM meta WHERE key = 'schema_version'")
+    if drop_table:
+        conn.execute("DROP TABLE events_fts")
+
+
+def _events_fts_objects(conn) -> list[str]:
+    return [
+        row[0]
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE name LIKE 'events_fts%'"
+        )
+    ]
+
+
+def test_dangling_events_fts_triggers_break_inserts(conn):
+    """The failure the migration exists to repair, so the fix cannot silently rot."""
+
+    _make_legacy_events_fts(conn, drop_table=True)
+
+    with pytest.raises(sqlite3.OperationalError, match="events_fts"):
+        conn.execute(
+            "INSERT INTO events (source, content, timestamp, content_hash) "
+            "VALUES ('test', 'content', '2026-01-01T00:00:00+00:00', 'legacy')"
+        )
+
+
+def test_init_db_repairs_dangling_events_fts_triggers(conn):
+    _make_legacy_events_fts(conn, drop_table=True)
+
+    db.init_db(conn)
+
+    conn.execute(
+        "INSERT INTO events (source, content, timestamp, content_hash) "
+        "VALUES ('test', 'content', '2026-01-01T00:00:00+00:00', 'legacy')"
+    )
+    assert _events_fts_objects(conn) == []
+
+
+def test_init_db_drops_intact_legacy_events_fts(conn):
+    """An untouched legacy index is dead weight once nothing writes to it."""
+
+    _make_legacy_events_fts(conn, drop_table=False)
+
+    db.init_db(conn)
+
+    assert _events_fts_objects(conn) == []
+
+
+def test_init_db_preserves_events_through_migration(conn):
+    conn.execute(
+        "INSERT INTO events (source, content, timestamp, content_hash) "
+        "VALUES ('test', 'keep me', '2026-01-01T00:00:00+00:00', 'preserved')"
+    )
+    _make_legacy_events_fts(conn, drop_table=True)
+
+    db.init_db(conn)
+
+    row = conn.execute(
+        "SELECT content FROM events WHERE content_hash = 'preserved'"
+    ).fetchone()
+    assert row[0] == "keep me"
+
+
+def test_init_db_records_schema_version(conn):
+    db.init_db(conn)
+
+    version = conn.execute(
+        "SELECT value FROM meta WHERE key = 'schema_version'"
+    ).fetchone()[0]
+    assert int(version) == db.SCHEMA_VERSION
+
+
+def test_migrations_skipped_once_recorded(conn, monkeypatch):
+    """A database already at the current version must not re-run migrations."""
+
+    db.init_db(conn)
+
+    def fail(_conn):
+        raise AssertionError("migration re-ran on an up-to-date database")
+
+    monkeypatch.setattr(db, "_MIGRATIONS", ((1, fail),))
+    db.init_db(conn)
+
+
 def test_transactional_commits_on_success(conn):
     with db.transactional(conn) as txn:
         txn.execute(

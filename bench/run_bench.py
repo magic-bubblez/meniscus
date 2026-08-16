@@ -68,8 +68,7 @@ def run(dataset_path, selector, out_path):
     data = [full[i] for i in selector] if isinstance(selector, list) else full[:selector]
     model, emb = get_model(), get_embedding_model()
 
-    from meniscus.providers.openrouter import OpenRouterProvider
-    synth = OpenRouterProvider(model=_cfg.MODEL)
+    synth = model
     rows = []
     with open(out_path, "w") as fout:
         for k, inst in enumerate(data, 1):

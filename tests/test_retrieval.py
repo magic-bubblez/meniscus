@@ -5,6 +5,7 @@ import json
 from click.testing import CliRunner
 
 from meniscus import db
+from meniscus.cli import main as cli_main
 from meniscus.cli.main import cli
 
 
@@ -77,3 +78,39 @@ def test_ask_json_flag_no_llm(tmp_path, monkeypatch):
     payload = json.loads(result.output)
     assert payload["count"] == 1
     assert payload["facts"][0]["event_id"] == event_id
+    # Keyword-only by configuration is the deliberate mode, so nothing is flagged.
+    assert "degraded" not in payload
+
+
+def test_ask_json_flags_degraded_coverage(tmp_path, monkeypatch):
+    """A configured-but-unavailable embedding model must show up in the payload."""
+
+    from meniscus.exceptions import ModelUnavailableError
+    from meniscus.fact_retrieval import MEANING_SEARCH_UNAVAILABLE
+
+    db_path = tmp_path / "degraded.db"
+    monkeypatch.setattr(db, "EMBEDDING_PROVIDER", "none")
+    monkeypatch.setattr("meniscus.config.EMBEDDING_PROVIDER", "local")
+    conn = db.get_connection(db_path)
+    db.init_db(conn)
+    event_id = _add_event(conn, "auth cli fallback", "2026-01-01T00:00:00+00:00")
+    _add_fact(conn, event_id, "The person used auth cli fallback.", ["auth"])
+    conn.commit()
+
+    class FailingEmbedding:
+        def embed_query(self, text):
+            raise ModelUnavailableError("embedding backend is down")
+
+    monkeypatch.setattr(
+        cli_main,
+        "_get_retrieval_resources",
+        lambda: (conn, None, FailingEmbedding(), False),
+    )
+
+    result = CliRunner().invoke(cli, ["ask", "--json", "auth"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["degraded"] == [MEANING_SEARCH_UNAVAILABLE]
+    # The results still come back — degrading visibly is not the same as failing.
+    assert payload["count"] == 1

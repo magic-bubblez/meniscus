@@ -9,6 +9,7 @@ import sqlite3
 import struct
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from typing import Callable
 
 from meniscus import config
 from meniscus.embedding_interface import EmbeddingInterface
@@ -21,6 +22,10 @@ logger = logging.getLogger(__name__)
 
 _FTS_TOKEN_RE = re.compile(r"\w+")
 _VECTOR_MAX_K = 500
+
+MEANING_SEARCH_UNAVAILABLE = (
+    "meaning search unavailable — these results are keyword-only and may be incomplete"
+)
 
 
 def cosine_similarity(vec_a: list[float], vec_b: list[float]) -> float:
@@ -94,10 +99,16 @@ def retrieve(
     end: str | None = None,
     limit: int = config.RETRIEVAL_DEFAULT_LIMIT,
     embedding_model: EmbeddingInterface | None = None,
+    on_degraded: Callable[[str], None] | None = None,
 ) -> list[Fact | EventUnit]:
-    """Return matched facts plus their scored neighbours, chronological (source-collapsed)."""
+    """Return matched facts plus their scored neighbours, chronological (source-collapsed).
 
-    query_embedding = _embed_query(embedding_model, text) if text else None
+    ``on_degraded`` receives a note whenever retrieval had to fall back to fewer
+    doors than configured, so a caller can pass the reduced coverage on instead of
+    presenting a thinner result as a complete one.
+    """
+
+    query_embedding = _embed_query(embedding_model, text, on_degraded) if text else None
     matched = search_facts(conn, text, entity, start, end, limit, query_embedding)
     if not matched:
         return []
@@ -275,10 +286,13 @@ def episode(
     group: bool = True,
     max_events: int = config.EPISODE_MAX_EVENTS,
     embedding_model: EmbeddingInterface | None = None,
+    on_degraded: Callable[[str], None] | None = None,
 ) -> list[Episode]:
     """Reconstruct the session-segments around an anchor, chronological, with facts."""
 
-    anchor = _resolve_anchor(conn, anchor_text, anchor_event_id, at, embedding_model)
+    anchor = _resolve_anchor(
+        conn, anchor_text, anchor_event_id, at, embedding_model, on_degraded
+    )
     if anchor is None:
         return []
     anchor_dt = datetime.fromisoformat(anchor)
@@ -318,6 +332,7 @@ def _resolve_anchor(
     anchor_event_id: int | None,
     at: str | None,
     embedding_model: EmbeddingInterface | None,
+    on_degraded: Callable[[str], None] | None = None,
 ) -> str | None:
     if at is not None:
         start, _ = normalize_time_window(at, None)
@@ -328,7 +343,7 @@ def _resolve_anchor(
         ).fetchone()
         return row["timestamp"] if row is not None else None
     if anchor_text:
-        query_embedding = _embed_query(embedding_model, anchor_text)
+        query_embedding = _embed_query(embedding_model, anchor_text, on_degraded)
         matched = search_facts(conn, text=anchor_text, limit=1, query_embedding=query_embedding)
         return matched[0].timestamp if matched else None
     return None
@@ -636,14 +651,36 @@ def _fact_embedding(conn: sqlite3.Connection, fact_id: int) -> list[float] | Non
 def _embed_query(
     embedding_model: EmbeddingInterface | None,
     text: str | None,
+    on_degraded: Callable[[str], None] | None = None,
 ) -> list[float] | None:
-    if embedding_model is None or not text:
+    """Embed a query, reporting when the meaning door closes unexpectedly.
+
+    Retrieval reads through two doors — keyword and meaning. Losing the meaning
+    door changes what the same query returns, so a caller that is told nothing
+    would read a thinner result as a complete one. Keyword-only by configuration
+    is a deliberate mode and stays quiet; keyword-only because the embedding
+    model is missing or failed is a degradation and must be reported.
+    """
+
+    if not text:
         return None
+
+    if embedding_model is None:
+        if config.EMBEDDING_PROVIDER != config.EMBEDDING_DISABLED:
+            _report_degraded(on_degraded, MEANING_SEARCH_UNAVAILABLE)
+        return None
+
     try:
         return embedding_model.embed_query(text)
     except ModelUnavailableError as exc:
         logger.warning("Embedding model unavailable during retrieval: %s", exc)
+        _report_degraded(on_degraded, MEANING_SEARCH_UNAVAILABLE)
         return None
+
+
+def _report_degraded(on_degraded: Callable[[str], None] | None, note: str) -> None:
+    if on_degraded is not None:
+        on_degraded(note)
 
 
 def _record_hit(

@@ -138,12 +138,16 @@ Open the client's MCP settings and add the object above. The settings screen and
 
 | Command | Purpose |
 |---|---|
+| `men watch --start` | Install and start background capture, then exit |
+| `men watch --stop` | Stop background capture and remove the service |
 | `men watch --dry-run` | Show discoverable transcript turns without writing |
 | `men watch --catch-up --distill` | Ignore old history, then capture and process new turns |
 | `men watch --distill` | Capture and process continuously in the foreground |
 | `men watch --once --distill` | Capture and process once, then exit |
 
 Without `--distill`, `men watch` safely stores raw events as pending. Run `men process` later to turn them into searchable facts.
+
+`--start` and `--stop` control the supervised background service described in [Background capture](#background-capture). The other flags run capture in your terminal for as long as the command lasts.
 
 Passive transcript adapters currently recognize Claude Code and Codex session files. Every MCP-compatible client can still recall and log memory through `meniscus_recall` and `meniscus_log`.
 
@@ -167,14 +171,41 @@ Run `men [COMMAND] --help` for every option accepted by a command.
 | `~/.meniscus/meniscus.db` | Events, facts, entities, embeddings, and ingestion cursors |
 | `~/.meniscus/config.toml` | Active provider, model, and runtime settings |
 | `~/.meniscus/.env` | Provider API keys, stored with private file permissions |
-| `~/.meniscus/capture.out.log` | Background capture output on macOS |
-
 
 ## Supported model providers
 
 `men init` supports OpenRouter, OpenAI, Anthropic, Google Gemini, Groq, xAI, Hugging Face Inference Providers, Ollama, and custom OpenAI-compatible endpoints. Meniscus uses the same selected model for memory processing and `men ask` synthesis.
 
 If processing becomes unavailable, captured events remain pending instead of being discarded. Fix the provider with `men config set`, verify it with `men doctor`, then resume with `men process`.
+
+## Background capture
+
+Background capture keeps a supervised `men watch` running, so Claude Code and Codex sessions are recorded without you starting anything. `men init` offers to install it, and it can be switched at any time without re-running setup:
+
+```console
+men watch --start    # install and start it
+men watch --stop     # stop it and remove the service, including at next login
+```
+
+Stopping removes the service definition rather than only killing the process — both supervisors are configured to restart it and to start it again at login, so removing the definition is what actually turns capture off.
+
+| Platform | Supervisor | Logs |
+|---|---|---|
+| macOS | LaunchAgent `~/Library/LaunchAgents/ai.meniscus.watch.plist` | `~/.meniscus/capture.err.log` |
+| Linux | systemd user unit `~/.config/systemd/user/ai.meniscus.watch.service` | `journalctl --user -u ai.meniscus.watch` |
+| Other | Not supervised — run `men watch --catch-up` yourself | terminal |
+
+On Linux, a systemd user service only survives logout if lingering is enabled for your account:
+
+```console
+loginctl enable-linger "$USER"
+```
+
+Without it, capture stops when your last session ends and resumes at next login. Machines without systemd fall back to running `men watch` manually.
+
+### If capture seems to have stopped
+
+`men status` shows how long ago the last event landed, and `men doctor` verifies that the database still accepts new events — a memory that stops growing is usually one of those two, not retrieval. Then read the service log for your platform from the table above.
 
 ## How retrieval works
 

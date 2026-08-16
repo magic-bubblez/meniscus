@@ -55,6 +55,7 @@ MODEL_VALIDATION_TIMEOUT_SECONDS: float = 15.0
 MODEL_REQUEST_TIMEOUT_SECONDS: float = 120.0
 
 # Embeddings -- run locally, no API
+EMBEDDING_DISABLED = "none"  # deliberate keyword-only mode, not a failure
 EMBEDDING_PROVIDER: str = "local"
 EMBEDDING_DIMENSIONS: int = 768
 

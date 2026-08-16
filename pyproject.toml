@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "meniscus"
-version = "0.1.0"
+version = "0.2.0"
 description = "Local structured memory system for AI agents"
 readme = "README.md"
 authors = [{ name = "magic_bubblez" }]

@@ -1,0 +1,5446 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="description" content="Meniscus — local, deterministic memory for AI agents." />
+  <meta name="theme-color" content="#1537ad" />
+  <title>Meniscus — memory beneath your tools</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500&amp;family=IBM+Plex+Mono:wght@400;500&amp;family=Instrument+Serif:ital@0;1&amp;family=Syne:wght@400;500;600&amp;display=swap"
+    rel="stylesheet" />
+  <style>
+    :root {
+      --blue: #1537ad;
+      --deep: #0b1d63;
+      --paper: #f3ebe5;
+      --ink: #15162b;
+      --pink: #e2a0b8;
+      --coral: #f36b57;
+      --gold: #d9b34e;
+      --green: #176a5e;
+      --lilac: #a9abd8;
+      --sky: #94bfda;
+      --sans: "DM Sans", sans-serif;
+      --display: "Syne", sans-serif;
+      --mono: "IBM Plex Mono", monospace;
+      --edge: clamp(20px, 5vw, 84px);
+      --max: 1580px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+      background: var(--blue);
+    }
+
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: var(--sans);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body:after {
+      content: "";
+      position: fixed;
+      z-index: 99;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.07;
+      mix-blend-mode: multiply;
+      background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='.7' numOctaves='5' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    button {
+      font: inherit;
+    }
+
+    svg,
+    img {
+      display: block;
+    }
+
+    .page {
+      width: min(100%, var(--max));
+      margin: auto;
+      overflow: hidden;
+    }
+
+    .kicker {
+      font: 500 10px/1.4 var(--mono);
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    .dot {
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      margin-right: 10px;
+      border-radius: 50%;
+      background: var(--coral);
+      box-shadow: 12px 0 0 var(--gold);
+    }
+
+    .mark {
+      width: 48px;
+      height: 27px;
+    }
+
+    .mark path {
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2.8;
+      stroke-linecap: round;
+    }
+
+    .mark .a {
+      fill: var(--gold);
+    }
+
+    .mark .b {
+      fill: var(--coral);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      font: 500 15px var(--display);
+      letter-spacing: 0.03em;
+    }
+
+    .nav {
+      position: absolute;
+      z-index: 10;
+      top: 0;
+      left: 50%;
+      width: min(100%, var(--max));
+      height: 64px;
+      transform: translateX(-50%);
+      padding: 0 var(--edge);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      color: #f8ede7;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.16);
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 27px;
+      color: rgba(255, 255, 255, 0.62);
+      font: 400 9px var(--mono);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .hero {
+      position: relative;
+      min-height: 100svh;
+      padding: 100px var(--edge) 50px;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      color: #f7eae5;
+      background: var(--blue);
+      isolation: isolate;
+    }
+
+    .hero-cloud {
+      position: absolute;
+      z-index: -3;
+      inset: -8%;
+      width: 116%;
+      height: 116%;
+      object-fit: cover;
+      opacity: 0.28;
+      mix-blend-mode: screen;
+      filter: saturate(0.7) contrast(1.1);
+    }
+
+    .hero:before {
+      content: "";
+      position: absolute;
+      z-index: -2;
+      inset: 0;
+      background:
+        radial-gradient(circle at 50% 47%,
+          rgba(11, 29, 99, 0.08),
+          rgba(11, 29, 99, 0.42) 68%),
+        linear-gradient(180deg, rgba(9, 26, 92, 0.1), rgba(9, 26, 92, 0.38));
+    }
+
+    .hero-copy {
+      position: relative;
+      z-index: 3;
+      width: min(760px, 90%);
+      text-align: center;
+    }
+
+    .hero-logo {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .hero-logo .mark {
+      width: 75px;
+      height: 42px;
+    }
+
+    .hero-name {
+      font: 500 clamp(56px, 7.2vw, 102px)/0.9 var(--display);
+      letter-spacing: -0.055em;
+      text-transform: lowercase;
+    }
+
+    .hero h1 {
+      margin: 28px 0 15px;
+      font: 500 clamp(21px, 2.1vw, 31px)/1.2 var(--display);
+      letter-spacing: -0.035em;
+    }
+
+    .hero p {
+      max-width: 530px;
+      margin: auto;
+      color: rgba(247, 234, 229, 0.7);
+      font-size: 15px;
+      line-height: 1.65;
+    }
+
+    .hero-link {
+      display: inline-flex;
+      margin-top: 28px;
+      padding-bottom: 7px;
+      border-bottom: 1px solid var(--pink);
+      color: #fff;
+      font: 400 10px var(--mono);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .fragment {
+      position: absolute;
+      color: rgba(255, 255, 255, 0.28);
+      font: 400 8px var(--mono);
+      letter-spacing: 0.08em;
+    }
+
+    .f1 {
+      left: 13%;
+      top: 27%;
+      transform: rotate(-7deg);
+    }
+
+    .f2 {
+      right: 12%;
+      top: 35%;
+      transform: rotate(6deg);
+    }
+
+    .f3 {
+      left: 22%;
+      bottom: 24%;
+      transform: rotate(3deg);
+    }
+
+    .threads {
+      position: absolute;
+      z-index: 1;
+      left: 0;
+      right: 0;
+      bottom: -10px;
+      width: 100%;
+      height: 45%;
+      overflow: visible;
+    }
+
+    .threads path {
+      fill: none;
+      stroke-linecap: round;
+    }
+
+    .threads .fine {
+      stroke-width: 1.3;
+      opacity: 0.65;
+    }
+
+    .threads .pastel {
+      stroke-width: 9;
+      opacity: 0.55;
+      filter: url(#rough);
+    }
+
+    .threads circle {
+      filter: url(#soft);
+    }
+
+    .scroll-note {
+      position: absolute;
+      z-index: 3;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: rgba(255, 255, 255, 0.46);
+      font: 400 8px var(--mono);
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    .human {
+      position: relative;
+      height: min(88svh, 900px);
+      min-height: 640px;
+      overflow: hidden;
+      color: white;
+      background: #176a5e;
+    }
+
+    .human img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: center 58%;
+      filter: saturate(0.88) contrast(1.02);
+    }
+
+    .human:after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(90deg,
+          rgba(8, 25, 48, 0.72),
+          rgba(8, 25, 48, 0.08) 58%,
+          rgba(8, 25, 48, 0.1)),
+        linear-gradient(0deg, rgba(8, 25, 48, 0.35), transparent 50%);
+    }
+
+    .human-copy {
+      position: absolute;
+      z-index: 2;
+      left: var(--edge);
+      top: 50%;
+      width: min(410px, 72%);
+      transform: translateY(-50%);
+    }
+
+    .human-copy h2 {
+      margin: 18px 0 24px;
+      font: 500 clamp(38px, 4.4vw, 67px)/0.98 var(--display);
+      letter-spacing: -0.05em;
+    }
+
+    .human-copy p {
+      color: rgba(255, 255, 255, 0.72);
+      font-size: 16px;
+      line-height: 1.72;
+    }
+
+    .human-copy strong {
+      display: block;
+      margin-top: 22px;
+      color: white;
+      font-weight: 400;
+    }
+
+    .maps {
+      padding: clamp(90px, 10vw, 150px) var(--edge);
+      background: var(--paper);
+    }
+
+    .maps-intro {
+      display: grid;
+      grid-template-columns: 0.55fr 1fr;
+      gap: 8vw;
+      margin-bottom: 70px;
+    }
+
+    .maps-intro h2 {
+      margin: 18px 0 0;
+      font: 500 clamp(34px, 4vw, 59px)/1 var(--display);
+      letter-spacing: -0.05em;
+    }
+
+    .maps-intro p {
+      align-self: end;
+      max-width: 570px;
+      margin: 0;
+      color: #686674;
+      font-size: 16px;
+      line-height: 1.72;
+    }
+
+    .map-row {
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      gap: 55px;
+      align-items: center;
+      padding: 55px 0;
+      border-top: 1px solid rgba(21, 22, 43, 0.18);
+    }
+
+    .map-row:last-child {
+      border-bottom: 1px solid rgba(21, 22, 43, 0.18);
+    }
+
+    .map-label span {
+      color: #8b8790;
+      font: 400 9px var(--mono);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .map-label h3 {
+      margin: 14px 0 12px;
+      font: 1000 30px/1.12 var(--display);
+      letter-spacing: -0.035em;
+    }
+
+    .map-label p {
+      margin: 0;
+      color: #77727c;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .map-svg {
+      width: 100%;
+      height: auto;
+      max-height: 500px;
+    }
+
+    .map-svg .thread {
+      fill: none;
+      stroke-width: 2.3;
+      stroke-linecap: round;
+      filter: url(#wobble);
+    }
+
+    .map-svg .echo {
+      fill: none;
+      stroke-width: 1;
+      stroke-dasharray: 3 8;
+      opacity: 0.55;
+    }
+
+    .map-svg .person {
+      fill: #2442ad;
+      stroke: #f3ebe5;
+      stroke-width: 2;
+    }
+
+    .map-svg .memory {
+      fill: var(--blue);
+      stroke: var(--ink);
+      stroke-width: 2;
+    }
+
+    .map-svg .tool {
+      fill: var(--paper);
+      stroke: var(--ink);
+      stroke-width: 1.5;
+    }
+
+    .map-svg text {
+      fill: var(--ink);
+      font: 500 10px var(--mono);
+      text-anchor: middle;
+      letter-spacing: 0.05em;
+    }
+
+    .map-svg .coretext {
+      font: 500 17px var(--display);
+      letter-spacing: -0.02em;
+    }
+
+    .master-line {
+      margin: 44px auto 15px;
+      width: min(850px, 100%);
+      font: 500 clamp(31px, 3.8vw, 55px)/1.05 var(--display);
+      letter-spacing: -0.05em;
+      text-align: center;
+    }
+
+    .master-line em {
+      color: var(--blue);
+      font-style: normal;
+    }
+
+    .master-sub {
+      margin: 0 auto 70px;
+      text-align: center;
+      color: #79747c;
+      font-size: 14px;
+    }
+
+    .proof {
+      padding: clamp(90px, 9vw, 145px) var(--edge);
+      background: #ece1db;
+    }
+
+    .proof-grid {
+      display: grid;
+      grid-template-columns: 1fr 0.9fr;
+      gap: 9vw;
+    }
+
+    .proof h2 {
+      margin: 17px 0 24px;
+      max-width: 570px;
+      font: 500 clamp(36px, 4.2vw, 63px)/1 var(--display);
+      letter-spacing: -0.05em;
+    }
+
+    .proof-copy>p {
+      max-width: 560px;
+      color: #686674;
+      font-size: 16px;
+      line-height: 1.7;
+    }
+
+    .stat-list {
+      align-self: center;
+    }
+
+    .stat {
+      display: grid;
+      grid-template-columns: 150px 1fr;
+      gap: 24px;
+      padding: 25px 0;
+      border-top: 1px solid rgba(21, 22, 43, 0.18);
+    }
+
+    .stat:last-child {
+      border-bottom: 1px solid rgba(21, 22, 43, 0.18);
+    }
+
+    .stat strong {
+      font: 500 clamp(38px, 4vw, 58px)/0.9 var(--display);
+      letter-spacing: -0.05em;
+    }
+
+    .stat b {
+      display: block;
+      margin-bottom: 7px;
+      font-weight: 500;
+    }
+
+    .stat small {
+      color: #76717a;
+      font: 400 10px/1.55 var(--mono);
+    }
+
+    .benchmark-section {
+      padding: 0 var(--edge) clamp(95px, 10vw, 150px);
+      background: #ece1db;
+    }
+
+    .benchmark {
+      padding: clamp(38px, 5vw, 68px);
+      border-radius: 18px;
+      background: #090a0e;
+      color: #f5f1ef;
+      box-shadow: 0 35px 90px rgba(21, 22, 43, 0.15);
+    }
+
+    .bench-head {
+      text-align: center;
+    }
+
+    .bench-head h2 {
+      margin: 0;
+      font: 500 clamp(37px, 4.7vw, 66px)/1 var(--display);
+      letter-spacing: -0.05em;
+    }
+
+    .bench-head p {
+      margin: 9px 0 0;
+      color: #85858e;
+      font: 400 11px var(--mono);
+    }
+
+    .scorecards {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      margin: 31px 0 36px;
+    }
+
+    .score {
+      min-width: 180px;
+      padding: 14px;
+      text-align: center;
+      border-radius: 7px;
+      background: #121318;
+    }
+
+    .score strong {
+      display: block;
+      color: var(--gold);
+      font: 500 27px var(--display);
+    }
+
+    .score:nth-child(2) strong {
+      color: var(--pink);
+    }
+
+    .score span {
+      color: #92929a;
+      font: 400 9px var(--mono);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .chart {
+      height: 330px;
+      display: flex;
+      align-items: end;
+      justify-content: space-around;
+      border-bottom: 1px dashed #37383f;
+      background: repeating-linear-gradient(to bottom,
+          transparent 0,
+          transparent calc(25% - 1px),
+          #292a30 calc(25% - 1px),
+          #292a30 25%);
+    }
+
+    .bar-item {
+      height: 100%;
+      width: 20%;
+      display: flex;
+      flex-direction: column;
+      justify-content: end;
+      align-items: center;
+      gap: 9px;
+    }
+
+    .bar {
+      position: relative;
+      width: min(58px, 45%);
+      height: calc(var(--n) * 1%);
+      background: var(--pink);
+      border-radius: 3px 3px 0 0;
+    }
+
+    .bar:before {
+      content: attr(data-n);
+      position: absolute;
+      top: 8px;
+      inset-inline: 0;
+      color: #101116;
+      text-align: center;
+      font: 500 12px var(--mono);
+    }
+
+    .bar-item:nth-child(2) .bar {
+      background: #9b83e6;
+    }
+
+    .bar-item:nth-child(3) .bar {
+      background: var(--sky);
+    }
+
+    .bar-item:nth-child(4) .bar {
+      background: var(--gold);
+    }
+
+    .bar-item label {
+      height: 34px;
+      color: #93939b;
+      font: 400 9px/1.3 var(--mono);
+      text-align: center;
+    }
+
+    .bench-note {
+      margin: 22px auto 0;
+      max-width: 710px;
+      color: #707079;
+      font: 400 9px/1.55 var(--mono);
+      text-align: center;
+    }
+
+    .principles {
+      padding: clamp(90px, 10vw, 150px) var(--edge);
+      background: var(--paper);
+    }
+
+    .principles-head {
+      max-width: 670px;
+      margin-bottom: 55px;
+    }
+
+    .principles h2 {
+      margin: 17px 0 0;
+      font: 500 clamp(36px, 4.4vw, 65px)/1 var(--display);
+      letter-spacing: -0.05em;
+    }
+
+    .principle {
+      display: grid;
+      grid-template-columns: 70px 0.65fr 1fr;
+      gap: 35px;
+      padding: 35px 0;
+      border-top: 1px solid rgba(21, 22, 43, 0.18);
+      align-items: start;
+    }
+
+    .principle:last-child {
+      border-bottom: 1px solid rgba(21, 22, 43, 0.18);
+    }
+
+    .principle>span {
+      font: 400 10px var(--mono);
+      color: #8b8790;
+    }
+
+    .principle h3 {
+      margin: 0;
+      font: 500 25px var(--display);
+      letter-spacing: -0.035em;
+    }
+
+    .principle-copy p {
+      max-width: 620px;
+      margin: 0 0 17px;
+      color: #716d77;
+      font-size: 14px;
+      line-height: 1.65;
+    }
+
+    .mini {
+      padding: 13px 16px;
+      background: rgba(21, 55, 173, 0.06);
+      border-left: 2px solid var(--coral);
+      font: 400 10px/1.6 var(--mono);
+    }
+
+    .install {
+      padding: clamp(95px, 10vw, 145px) var(--edge) 34px;
+      color: #f7eae5;
+      background: var(--blue);
+    }
+
+    .install-grid {
+      display: grid;
+      grid-template-columns: 0.8fr 1.2fr;
+      gap: 9vw;
+    }
+
+    .install h2 {
+      margin: 17px 0 0;
+      font: 500 clamp(37px, 4.5vw, 66px)/1 var(--display);
+      letter-spacing: -0.05em;
+    }
+
+    .codebox {
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 12px;
+      background: var(--deep);
+      overflow: hidden;
+    }
+
+    .code-tabs {
+      display: flex;
+      gap: 24px;
+      padding: 16px 20px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+    }
+
+    .code-tab {
+      border: 0;
+      padding: 0;
+      color: rgba(255, 255, 255, 0.45);
+      background: none;
+      font: 400 9px var(--mono);
+      text-transform: uppercase;
+      cursor: pointer;
+    }
+
+    .code-tab.active {
+      color: var(--coral);
+    }
+
+    .code-content {
+      position: relative;
+    }
+
+    .copy {
+      position: absolute;
+      right: 16px;
+      top: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 4px;
+      padding: 6px 9px;
+      color: var(--sky);
+      background: none;
+      font: 400 8px var(--mono);
+    }
+
+    .footer {
+      margin-top: 110px;
+      padding-top: 25px;
+      border-top: 1px solid rgba(255, 255, 255, 0.15);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      color: rgba(255, 255, 255, 0.48);
+      font: 400 9px var(--mono);
+      text-transform: uppercase;
+    }
+
+    .reveal {
+      opacity: 0;
+      transform: translateY(14px);
+      transition: 0.7s ease;
+    }
+
+    .reveal.in {
+      opacity: 1;
+      transform: none;
+    }
+
+    .nav:before {
+      content: "LOCAL / MEMORY LAYER";
+      color: rgba(255, 255, 255, 0.58);
+      font: 400 8px var(--mono);
+      letter-spacing: 0.14em;
+    }
+
+    .nav>.brand {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+    }
+
+    .hero.hero-new {
+      min-height: 100svh;
+      padding: 105px var(--edge) 44px;
+      display: grid;
+      grid-template-columns: 0.88fr 1.12fr;
+      gap: clamp(35px, 5vw, 80px);
+      place-items: stretch;
+      background: #344da5;
+    }
+
+    .hero-new:before {
+      content: "";
+      position: absolute;
+      z-index: 0;
+      inset: 0;
+      background:
+        linear-gradient(90deg, rgba(16, 29, 91, 0.12), transparent 50%),
+        radial-gradient(circle at 80% 42%,
+          rgba(169, 171, 216, 0.15),
+          transparent 34%);
+    }
+
+    .hero-editorial {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding-top: 40px;
+    }
+
+    .hero-editorial .kicker {
+      color: rgba(255, 255, 255, 0.7);
+    }
+
+    .hero-editorial h1 {
+      max-width: 700px;
+      margin: 23px 0 22px;
+      font:
+        400 clamp(59px, 6.5vw, 105px)/0.82 "Instrument Serif",
+        serif;
+      letter-spacing: -0.045em;
+      text-transform: uppercase;
+    }
+
+    .hero-editorial h1 em {
+      display: block;
+      color: #f1c2d0;
+      font-style: normal;
+    }
+
+    .hero-editorial>p {
+      max-width: 510px;
+      margin: 0;
+      color: rgba(255, 255, 255, 0.68);
+      font-size: 15px;
+      line-height: 1.65;
+    }
+
+    .hero-install {
+      width: min(100%, 580px);
+      margin-top: 38px;
+    }
+
+    .hero-install>span {
+      display: block;
+      margin-bottom: 10px;
+      color: rgba(255, 255, 255, 0.58);
+      font: 400 8px var(--mono);
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    .quick-command {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 16px 18px;
+      color: #243d99;
+      background: #f5eee9;
+      box-shadow: 7px 7px 0 rgba(11, 29, 99, 0.36);
+      font: 400 10px var(--mono);
+    }
+
+    .quick-command b {
+      font-weight: 500;
+    }
+
+    .quick-command a {
+      flex: none;
+      padding-left: 18px;
+      border-left: 1px solid rgba(36, 61, 153, 0.2);
+      text-transform: uppercase;
+    }
+
+    .hero-sculpture {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      place-items: center;
+      min-height: 680px;
+    }
+
+    .loom {
+      width: 100%;
+      height: auto;
+      max-height: 800px;
+      overflow: visible;
+    }
+
+    .loom .arch {
+      fill: none;
+      stroke: #e2a0b8;
+      stroke-width: 54;
+      opacity: 0.24;
+      filter: url(#loomgrain);
+    }
+
+    .loom .ray {
+      fill: none;
+      stroke: #f6e9e5;
+      stroke-width: 1.35;
+      opacity: 0.8;
+    }
+
+    .loom .ray.rose {
+      stroke: #efb1c4;
+    }
+
+    .loom .ray.gold {
+      stroke: #e2bd5b;
+    }
+
+    .loom .orbit {
+      fill: none;
+      stroke: #bfc7ec;
+      stroke-width: 1.1;
+      opacity: 0.55;
+    }
+
+    .loom .memory-disc {
+      fill: #f2e8e2;
+      stroke: #0b1d63;
+      stroke-width: 2;
+    }
+
+    .loom .memory-shadow {
+      fill: #e2a0b8;
+      opacity: 0.7;
+    }
+
+    .loom .agent {
+      fill: #344da5;
+      stroke: #f2e8e2;
+      stroke-width: 1.5;
+    }
+
+    .loom text {
+      fill: #f5eee9;
+      font: 500 9px var(--mono);
+      text-anchor: middle;
+      letter-spacing: 0.08em;
+    }
+
+    .loom .disc-title {
+      fill: #18275e;
+      font: 500 19px var(--display);
+    }
+
+    .loom .disc-sub {
+      fill: #5d6391;
+      font: 400 7px var(--mono);
+    }
+
+    .loom .signal-gold {
+      fill: var(--gold);
+    }
+
+    .loom .signal-coral {
+      fill: var(--coral);
+    }
+
+    .sculpture-caption {
+      position: absolute;
+      right: 0;
+      bottom: 14px;
+      color: rgba(255, 255, 255, 0.45);
+      font: 400 8px var(--mono);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    @media (max-width: 850px) {
+      .hero.hero-new {
+        grid-template-columns: 1fr;
+        gap: 0;
+        padding-top: 115px;
+      }
+
+      .hero-editorial {
+        padding-top: 0;
+      }
+
+      .hero-editorial h1 {
+        font-size: clamp(62px, 13vw, 92px);
+      }
+
+      .hero-sculpture {
+        min-height: 520px;
+        margin-top: -30px;
+      }
+
+      .loom {
+        max-height: 560px;
+      }
+
+      .maps-intro,
+      .proof-grid,
+      .install-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .map-row {
+        grid-template-columns: 1fr;
+        gap: 20px;
+      }
+
+      .map-label {
+        max-width: 480px;
+      }
+
+      .principle {
+        grid-template-columns: 45px 1fr;
+      }
+
+      .principle-copy {
+        grid-column: 2;
+      }
+
+      .proof-grid,
+      .install-grid {
+        gap: 60px;
+      }
+    }
+
+    @media (max-width: 600px) {
+      .nav:before {
+        display: none;
+      }
+
+      .nav>.brand {
+        position: static;
+        transform: none;
+      }
+
+      .hero.hero-new {
+        padding-inline: 22px;
+      }
+
+      .hero-editorial h1 {
+        font-size: 59px;
+      }
+
+      .quick-command {
+        font-size: 8px;
+      }
+
+      .hero-sculpture {
+        min-height: 430px;
+        margin-top: -10px;
+      }
+
+      .maps,
+      .proof,
+      .principles,
+      .install {
+        padding-inline: 22px;
+      }
+
+      .map-row {
+        padding: 40px 0;
+      }
+
+      .map-svg {
+        margin-inline: -8%;
+        width: 116%;
+      }
+
+      .stat {
+        grid-template-columns: 110px 1fr;
+      }
+
+      .benchmark-section {
+        padding-inline: 14px;
+      }
+
+      .benchmark {
+        padding: 35px 12px;
+      }
+
+      .score {
+        min-width: 0;
+        flex: 1;
+      }
+
+      .chart {
+        height: 270px;
+      }
+
+      .bar {
+        width: 42px;
+      }
+
+      .bar-item label {
+        font-size: 7px;
+      }
+
+      .principle {
+        gap: 17px;
+      }
+
+      .footer>span {
+        display: none;
+      }
+
+      .nav-links a:first-child {
+        display: none;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html {
+        scroll-behavior: auto;
+      }
+
+      .reveal {
+        opacity: 1;
+        transform: none;
+        transition: none;
+      }
+    }
+
+    .hero-new+.hero,
+    .human {
+      display: none;
+    }
+
+    .hero-final+.hero-new {
+      display: none;
+    }
+
+    .nav:before {
+      display: none;
+    }
+
+    .nav>.brand {
+      position: static;
+      transform: none;
+    }
+
+    .hero.hero-final {
+      position: relative;
+      min-height: 100svh;
+      padding: 100px var(--edge) 58px;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      background: #40579d;
+      color: #f5ede8;
+      isolation: isolate;
+    }
+
+    .hero-final:before {
+      content: "";
+      position: absolute;
+      z-index: -2;
+      inset: 0;
+      background:
+        radial-gradient(circle at 50% 47%,
+          rgba(168, 180, 220, 0.12),
+          transparent 25%),
+        linear-gradient(180deg,
+          rgba(19, 35, 92, 0.04),
+          rgba(19, 35, 92, 0.17));
+    }
+
+    .hero-center {
+      position: relative;
+      z-index: 4;
+      width: min(740px, 90%);
+      margin-top: -3vh;
+      text-align: center;
+    }
+
+    .hero-center .hero-mark {
+      width: 66px;
+      height: 38px;
+      margin: 0 auto 21px;
+    }
+
+    .hero-center .hero-mark path {
+      fill: none;
+      stroke: #f5ede8;
+      stroke-width: 2.7;
+      stroke-linecap: round;
+    }
+
+    .hero-center .hero-mark .a {
+      fill: var(--gold);
+    }
+
+    .hero-center .hero-mark .b {
+      fill: var(--coral);
+    }
+
+    .hero-center h1 {
+      margin: 0;
+      font: 600 clamp(38px, 4.2vw, 64px)/0.95 var(--display);
+      letter-spacing: 0.13em;
+      text-indent: 0.13em;
+      text-transform: uppercase;
+    }
+
+    .hero-center h2 {
+      margin: 22px 0 13px;
+      font: 400 clamp(20px, 2.1vw, 31px)/1.2 var(--display);
+      letter-spacing: -0.035em;
+    }
+
+    .hero-center p {
+      max-width: 510px;
+      margin: 0 auto;
+      color: rgba(245, 237, 232, 0.68);
+      font-size: 14px;
+      line-height: 1.7;
+    }
+
+    .hero-center a {
+      display: inline-block;
+      margin-top: 26px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid rgba(245, 237, 232, 0.45);
+      color: rgba(245, 237, 232, 0.82);
+      font: 400 8px var(--mono);
+      letter-spacing: 0.13em;
+      text-transform: uppercase;
+    }
+
+    .memory-field {
+      position: absolute;
+      z-index: 0;
+      inset: 64px 0 0;
+      width: 100%;
+      height: calc(100% - 64px);
+    }
+
+    .memory-field .contour {
+      fill: none;
+      stroke: #e9e4eb;
+      stroke-width: 1;
+      opacity: 0.1;
+    }
+
+    .memory-field .contour.rose {
+      stroke: #edb3c5;
+      opacity: 0.14;
+    }
+
+    .memory-field .trace {
+      fill: none;
+      stroke-linecap: round;
+      filter: url(#pastelrough);
+    }
+
+    .memory-field .trace.fat {
+      stroke-width: 8;
+      opacity: 0.5;
+    }
+
+    .memory-field .trace.thin {
+      stroke-width: 1.4;
+      opacity: 0.58;
+    }
+
+    .memory-field .seed {
+      filter: url(#pastelsoft);
+    }
+
+    .memory-field .memory-label {
+      fill: rgba(245, 237, 232, 0.32);
+      font: 400 8px var(--mono);
+      letter-spacing: 0.08em;
+    }
+
+    .hero-final .edge-note {
+      position: absolute;
+      z-index: 3;
+      bottom: 24px;
+      color: rgba(245, 237, 232, 0.38);
+      font: 400 8px var(--mono);
+      letter-spacing: 0.13em;
+      text-transform: uppercase;
+    }
+
+    .hero-final .edge-note.left {
+      left: var(--edge);
+    }
+
+    .hero-final .edge-note.right {
+      right: var(--edge);
+    }
+
+    @media (max-width: 700px) {
+      .hero.hero-final {
+        padding-inline: 20px;
+      }
+
+      .hero-center {
+        margin-top: -8vh;
+      }
+
+      .hero-center h1 {
+        font-size: 39px;
+        letter-spacing: 0.08em;
+        text-indent: 0.08em;
+      }
+
+      .hero-center h2 {
+        font-size: 21px;
+      }
+
+      .memory-field {
+        inset: 64px -26% 0;
+        width: 152%;
+      }
+
+      .hero-final .edge-note {
+        display: none;
+      }
+    }
+
+    .hero-proto~.hero {
+      display: none;
+    }
+
+    .hero.hero-proto {
+      position: relative;
+      min-height: 100svh;
+      padding: 94px var(--edge) 60px;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      background: #465b9d;
+      color: #f5ede8;
+      isolation: isolate;
+    }
+
+    .hero-proto:before {
+      content: "";
+      position: absolute;
+      z-index: -2;
+      inset: 64px 0 0;
+      background-image: radial-gradient(circle,
+          rgba(245, 237, 232, 0.34) 1.1px,
+          transparent 1.2px);
+      background-size: 28px 28px;
+      mask-image: radial-gradient(ellipse 63% 61% at 50% 48%,
+          transparent 0 21%,
+          #000 64%,
+          transparent 100%);
+      opacity: 0.55;
+    }
+
+    .hero-proto:after {
+      content: "";
+      position: absolute;
+      z-index: -1;
+      inset: 64px 0 0;
+      background:
+        radial-gradient(circle at 50% 42%,
+          rgba(184, 194, 229, 0.14),
+          transparent 31%),
+        linear-gradient(180deg, transparent 54%, rgba(16, 27, 76, 0.17));
+    }
+
+    .memory-rail {
+      position: absolute;
+      z-index: 2;
+      top: 102px;
+      bottom: 46px;
+      width: 1px;
+      background: repeating-linear-gradient(to bottom,
+          rgba(245, 237, 232, 0.35) 0 2px,
+          transparent 2px 8px);
+    }
+
+    .memory-rail.left {
+      left: var(--edge);
+    }
+
+    .memory-rail.right {
+      right: var(--edge);
+    }
+
+    .memory-rail span {
+      position: absolute;
+      top: 0;
+      width: max-content;
+      color: rgba(245, 237, 232, 0.48);
+      font: 400 8px var(--mono);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .memory-rail.left span {
+      left: 13px;
+    }
+
+    .memory-rail.right span {
+      right: 13px;
+    }
+
+    .hero-proto-center {
+      position: relative;
+      z-index: 5;
+      width: min(720px, 88%);
+      margin-top: -9vh;
+      text-align: center;
+    }
+
+    .hero-proto-center .mark {
+      width: 64px;
+      height: 37px;
+      margin: 0 auto 19px;
+    }
+
+    .hero-proto-center .mark path {
+      stroke: #f5ede8;
+    }
+
+    .hero-proto-center h1 {
+      margin: 0;
+      font: 600 clamp(42px, 4.5vw, 64px)/0.95 var(--display);
+      letter-spacing: 0.12em;
+      text-indent: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .hero-proto-center h2 {
+      margin: 20px 0 12px;
+      font: 400 clamp(21px, 2.1vw, 30px)/1.25 var(--display);
+      letter-spacing: -0.035em;
+    }
+
+    .hero-proto-center p {
+      margin: 0 auto;
+      max-width: 480px;
+      color: rgba(245, 237, 232, 0.67);
+      font-size: 14px;
+      line-height: 1.65;
+    }
+
+    .hero-actions {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin-top: 25px;
+    }
+
+    .hero-actions a {
+      padding: 11px 15px;
+      border: 1px solid rgba(245, 237, 232, 0.3);
+      color: #f5ede8;
+      background: rgba(245, 237, 232, 0.05);
+      font: 400 8px var(--mono);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .hero-actions a:first-child {
+      color: #283c82;
+      background: #f5ede8;
+      border-color: #f5ede8;
+    }
+
+    .memory-terrain {
+      position: absolute;
+      z-index: 1;
+      left: -2%;
+      right: -2%;
+      bottom: -2px;
+      width: 104%;
+      height: 46%;
+      overflow: visible;
+      /* Decorative only. A later rule raises this to z-index 6, above the hero
+         copy at z-index 5, where it would otherwise swallow clicks meant for
+         the install snippet's copy button. */
+      pointer-events: none;
+    }
+
+    .memory-terrain .mass {
+      fill: #17285f;
+    }
+
+    .memory-terrain .mass.mid {
+      fill: #213778;
+    }
+
+    .memory-terrain .topoline {
+      fill: none;
+      stroke: #9ba9d6;
+      stroke-width: 1.15;
+      opacity: 0.7;
+      stroke-linecap: round;
+    }
+
+    .memory-terrain .topoline.rose {
+      stroke: #e4a6ba;
+    }
+
+    .memory-terrain .event {
+      fill: #f5ede8;
+      opacity: 0.46;
+    }
+
+    .memory-terrain .event.hot {
+      fill: #ef6d58;
+      opacity: 1;
+    }
+
+    .memory-terrain .event.recalled {
+      fill: #dbb24f;
+      opacity: 1;
+    }
+
+    .memory-terrain text {
+      fill: rgba(245, 237, 232, 0.45);
+      font: 400 8px var(--mono);
+      letter-spacing: 0.08em;
+    }
+
+    .terrain-label {
+      position: absolute;
+      z-index: 4;
+      bottom: 19px;
+      color: rgba(245, 237, 232, 0.42);
+      font: 400 8px var(--mono);
+      letter-spacing: 0.11em;
+      text-transform: uppercase;
+    }
+
+    .terrain-label.left {
+      left: calc(var(--edge) + 18px);
+    }
+
+    .terrain-label.right {
+      right: calc(var(--edge) + 18px);
+    }
+
+    @media (max-width: 700px) {
+      .hero.hero-proto {
+        padding-inline: 20px;
+      }
+
+      .hero-proto-center {
+        margin-top: -15vh;
+        width: 94%;
+      }
+
+      .hero-proto-center h1 {
+        font-size: 40px;
+        letter-spacing: 0.08em;
+        text-indent: 0.08em;
+      }
+
+      .hero-proto-center h2 {
+        font-size: 21px;
+      }
+
+      .memory-terrain {
+        left: -34%;
+        width: 168%;
+        height: 40%;
+      }
+
+      .memory-rail,
+      .terrain-label {
+        display: none;
+      }
+
+      .hero-proto:before {
+        background-size: 24px 24px;
+      }
+    }
+
+    .hero.hero-proto {
+      background: #f1ece6;
+      color: #141522;
+    }
+
+    .hero-proto:before {
+      background-image: radial-gradient(circle,
+          #191a25 1.05px,
+          transparent 1.2px);
+      background-size: 26px 26px;
+      mask-image: none;
+      opacity: 0.22;
+    }
+
+    .hero-proto:after {
+      background:
+        radial-gradient(ellipse 43% 34% at 50% 40%,
+          #f1ece6 0 52%,
+          rgba(241, 236, 230, 0.94) 65%,
+          transparent 100%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.18), transparent 56%);
+    }
+
+    .nav {
+      color: #151622;
+      border-color: rgba(21, 22, 34, 0.17);
+    }
+
+    .nav-links {
+      color: rgba(21, 22, 34, 0.62);
+    }
+
+    .nav .mark path {
+      stroke: #151622;
+    }
+
+    .memory-rail {
+      background: repeating-linear-gradient(to bottom,
+          rgba(21, 22, 34, 0.42) 0 2px,
+          transparent 2px 8px);
+    }
+
+    .memory-rail span {
+      color: rgba(21, 22, 34, 0.54);
+    }
+
+    .hero-proto-center .mark path {
+      stroke: #151622;
+    }
+
+    .hero-proto-center h1,
+    .hero-proto-center h2 {
+      color: #151622;
+    }
+
+    .hero-proto-center p {
+      color: rgba(21, 22, 34, 0.65);
+    }
+
+    .hero-actions a {
+      border-color: rgba(21, 22, 34, 0.3);
+      color: #151622;
+      background: rgba(255, 255, 255, 0.28);
+    }
+
+    .hero-actions a:first-child {
+      color: #f7f0eb;
+      background: #2447b6;
+      border-color: #2447b6;
+    }
+
+    .memory-terrain {
+      height: 43%;
+    }
+
+    .memory-terrain .mass.mid {
+      fill: #dca3bd;
+    }
+
+    .memory-terrain .mass {
+      fill: #176558;
+    }
+
+    .memory-terrain .topoline {
+      stroke: #f4ece6;
+      stroke-width: 1.25;
+      opacity: 0.78;
+      stroke-dasharray: 1 5;
+    }
+
+    .memory-terrain .topoline.rose {
+      stroke: #f0d7df;
+      opacity: 0.95;
+    }
+
+    .memory-terrain .event {
+      fill: #11131d;
+      opacity: 0.5;
+    }
+
+    .memory-terrain .event.hot {
+      fill: #f06452;
+    }
+
+    .memory-terrain .event.recalled {
+      fill: #e1b538;
+    }
+
+    .memory-terrain text {
+      fill: rgba(17, 19, 29, 0.62);
+    }
+
+    .terrain-label {
+      color: rgba(21, 22, 34, 0.58);
+      mix-blend-mode: multiply;
+    }
+
+    .hero-proto-center:before {
+      content: "";
+      position: absolute;
+      z-index: -1;
+      left: 50%;
+      top: 47%;
+      width: 118%;
+      height: 145%;
+      transform: translate(-50%, -50%);
+      border-radius: 50%;
+      background: radial-gradient(ellipse,
+          rgba(241, 236, 230, 0.98) 0 52%,
+          transparent 73%);
+      pointer-events: none;
+    }
+
+    @media (max-width: 700px) {
+      .hero-proto:before {
+        background-size: 22px 22px;
+        opacity: 0.18;
+      }
+
+      .memory-terrain {
+        height: 37%;
+      }
+
+      .hero-proto-center:before {
+        width: 130%;
+        height: 138%;
+      }
+    }
+
+    .memory-terrain .mass.cobalt {
+      fill: #3152b5;
+    }
+
+    .nav .mark,
+    .hero-proto-center>.mark {
+      display: none;
+    }
+
+    .nav .brand {
+      gap: 0;
+      font-size: 17px;
+    }
+
+    .memory-terrain .event,
+    .memory-terrain text {
+      display: none;
+    }
+
+    .memory-terrain .mass {
+      fill: #1b347f;
+    }
+
+    .memory-terrain .mass.mid {
+      fill: #d99aaf;
+    }
+
+    .memory-terrain .mass.cobalt {
+      fill: #8799cc;
+    }
+
+    .memory-terrain .topoline {
+      stroke: #f1e8e3;
+      stroke-width: 1.15;
+      stroke-dasharray: 2 7;
+      opacity: 0.72;
+    }
+
+    .memory-terrain .topoline.rose {
+      stroke: #f4d4de;
+    }
+
+    .maps {
+      padding: 76px var(--edge) 90px;
+    }
+
+    .maps-intro {
+      margin-bottom: 36px;
+    }
+
+    .map-row {
+      padding: 36px 0;
+    }
+
+    .master-line {
+      margin-top: 30px;
+    }
+
+    .master-sub {
+      margin-bottom: 42px;
+    }
+
+    .proof {
+      padding: 76px var(--edge) 86px;
+    }
+
+    .benchmark-section {
+      padding-bottom: 90px;
+    }
+
+    .principles {
+      padding: 76px var(--edge) 90px;
+    }
+
+    .principles-head {
+      margin-bottom: 34px;
+    }
+
+    .principle {
+      padding: 25px 0;
+    }
+
+    .install {
+      padding: 82px var(--edge) 30px;
+    }
+
+    .footer {
+      margin-top: 76px;
+    }
+
+    @media (max-width: 700px) {
+
+      .maps,
+      .proof,
+      .principles,
+      .install {
+        padding-top: 58px;
+        padding-bottom: 64px;
+      }
+
+      .maps-intro {
+        margin-bottom: 24px;
+      }
+
+      .map-row {
+        padding: 28px 0;
+      }
+
+      .master-sub {
+        margin-bottom: 28px;
+      }
+
+      .benchmark-section {
+        padding-bottom: 65px;
+      }
+    }
+
+    .hero.hero-proto {
+      height: min(100svh, 880px);
+      min-height: 700px;
+      --tide-shift: 0%;
+      --copy-shift: 0px;
+      --copy-opacity: 1;
+    }
+
+    .hero-proto-center {
+      margin-top: -9vh;
+      transform: translateY(var(--copy-shift));
+      opacity: var(--copy-opacity);
+      transition: opacity 0.12s linear;
+    }
+
+    .memory-terrain {
+      height: 62%;
+      transform: translateY(var(--tide-shift));
+      will-change: transform;
+    }
+
+    .memory-rail,
+    .terrain-label {
+      display: none;
+    }
+
+    .hero-proto:before {
+      opacity: 0.16;
+    }
+
+    .footer .mark {
+      display: none;
+    }
+
+    .footer .brand {
+      gap: 0;
+    }
+
+    @media (max-width: 700px) {
+      .hero.hero-proto {
+        height: min(100svh, 780px);
+        min-height: 640px;
+      }
+
+      .hero-proto-center {
+        margin-top: -17vh;
+      }
+
+      .memory-terrain {
+        height: 54%;
+      }
+    }
+
+    .top-strip {
+      position: absolute;
+      z-index: 12;
+      top: 0;
+      left: 50%;
+      width: min(100%, var(--max));
+      height: 14px;
+      transform: translateX(-50%);
+      background: #2447b6;
+    }
+
+    .nav {
+      top: 14px;
+      border-bottom: 0;
+    }
+
+    .nav-links {
+      gap: 32px;
+      font-size: 18px;
+      letter-spacing: 0.08em;
+    }
+
+    .hero.hero-proto {
+      padding-top: 108px;
+    }
+
+    .hero-proto-center {
+      margin-top: -19vh;
+    }
+
+    .hero-proto-center h1 {
+      font-size: 16px;
+      line-height: 1;
+      letter-spacing: 0.18em;
+      text-indent: 0.18em;
+      transform: translateY(-5px);
+    }
+
+    .hero-proto-center h2 {
+      margin: 8px auto 12px;
+      max-width: 760px;
+      font-size: clamp(34px, 4vw, 58px);
+      line-height: 1.04;
+      letter-spacing: -0.055em;
+    }
+
+    .memory-terrain {
+      height: 68%;
+    }
+
+    .memory-terrain .mass.mid {
+      transform: translateY(-24px);
+    }
+
+    .memory-terrain .mass.cobalt {
+      fill: #9aade0;
+      transform: translateY(-14px);
+    }
+
+    @media (max-width: 700px) {
+      .top-strip {
+        height: 10px;
+      }
+
+      .nav {
+        top: 10px;
+      }
+
+      .nav-links {
+        font-size: 15px;
+      }
+
+      .hero.hero-proto {
+        padding-top: 96px;
+      }
+
+      .hero-proto-center {
+        margin-top: -18vh;
+      }
+
+      .hero-proto-center h1 {
+        font-size: 13px;
+      }
+
+      .hero-proto-center h2 {
+        font-size: 34px;
+      }
+
+      .memory-terrain {
+        height: 60%;
+      }
+    }
+
+    .top-strip {
+      position: relative;
+      top: auto;
+      left: auto;
+      width: min(100%, var(--max));
+      height: 20px;
+      margin: 0 auto;
+      transform: none;
+      background: #1b347f;
+    }
+
+    .nav {
+      top: 20px;
+    }
+
+    .hero.hero-proto {
+      padding-top: 114px;
+    }
+
+    .hero-proto:before {
+      background-image: radial-gradient(circle,
+          #11131d 1.25px,
+          transparent 1.4px);
+      background-size: 24px 24px;
+      opacity: 0.32;
+    }
+
+    .memory-terrain .pink-thread {
+      fill: none;
+      stroke: #665584;
+      stroke-width: 1.15;
+      stroke-linecap: round;
+      stroke-dasharray: 2 7;
+      opacity: 0.64;
+    }
+
+    @media (max-width: 700px) {
+      .top-strip {
+        height: 20px;
+      }
+
+      .nav {
+        top: 20px;
+      }
+
+      .hero.hero-proto {
+        padding-top: 108px;
+      }
+
+      .hero-proto:before {
+        background-size: 21px 21px;
+        opacity: 0.28;
+      }
+    }
+
+    .top-strip {
+      width: 200px;
+      height: 20px;
+      margin: 0 0 0 max(var(--edge), calc((100vw - var(--max)) / 2 + var(--edge)));
+    }
+
+    .hero-proto-center {
+      transform: translateY(calc(-10px + var(--copy-shift)));
+    }
+
+    .hero-proto-center .hero-headline {
+      max-width: 760px;
+      margin: 0;
+      color: #151622;
+      font: 600 clamp(40px, 4.7vw, 68px) / 1.02 var(--display);
+      letter-spacing: -0.06em;
+      text-indent: 0;
+      text-transform: none;
+    }
+
+    .hero-product {
+      margin: 14px 0 9px;
+      color: #151622;
+      font: 600 17px/1 var(--display);
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+    }
+
+    .hero-actions {
+      gap: 14px;
+      margin-top: 28px;
+    }
+
+    .hero-actions a {
+      padding: 13px 18px;
+      font-size: 10px;
+    }
+
+    .maps {
+      position: relative;
+      margin-top: -1px;
+      padding-top: 58px;
+      color: #f3ebe5;
+      background-color: #1b347f;
+      background-image: radial-gradient(circle,
+          rgba(243, 235, 229, 0.16) 1px,
+          transparent 1.1px);
+      background-size: 28px 28px;
+    }
+
+    .maps::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: linear-gradient(180deg,
+          rgba(12, 27, 75, 0.38),
+          transparent 34%);
+    }
+
+    .maps>* {
+      position: relative;
+      z-index: 1;
+    }
+
+    .maps-intro {
+      grid-template-columns: 0.55fr 0.8fr;
+      margin-bottom: 22px;
+    }
+
+    .maps-intro p,
+    .maps .map-label p,
+    .maps .master-sub {
+      color: rgba(243, 235, 229, 0.66);
+    }
+
+    .maps .map-label span {
+      color: #d99aaf;
+    }
+
+    .maps .map-svg text {
+      fill: #f3ebe5;
+    }
+
+    .maps .map-svg .tool {
+      fill: #1b347f;
+      stroke: #f3ebe5;
+    }
+
+    .maps .map-svg .person {
+      stroke: #f3ebe5;
+    }
+
+    .map-row.burden {
+      grid-template-columns: minmax(240px, 0.72fr) minmax(430px, 0.9fr);
+      gap: clamp(38px, 6vw, 90px);
+    }
+
+    .map-row.burden .map-svg {
+      width: min(100%, 690px);
+      justify-self: end;
+    }
+
+    .map-row.layer {
+      grid-template-columns: minmax(430px, 1fr) minmax(220px, 0.42fr);
+      gap: clamp(38px, 6vw, 90px);
+      margin-top: 12px;
+    }
+
+    .map-row.layer .map-label {
+      grid-column: 2;
+      grid-row: 1;
+    }
+
+    .map-row.layer .map-svg {
+      grid-column: 1;
+      grid-row: 1;
+      width: min(100%, 760px);
+      justify-self: start;
+    }
+
+    .maps .master-line {
+      max-width: 800px;
+    }
+
+    .maps .master-line em {
+      color: #d99aaf;
+    }
+
+    .proof {
+      background: #f1ece6;
+    }
+
+    .benchmark-section {
+      padding-top: 76px;
+      color: #f3ebe5;
+      background: #11131d;
+    }
+
+    .benchmark {
+      padding-top: 0;
+      border-radius: 0;
+      box-shadow: none;
+      background: transparent;
+    }
+
+    .principles {
+      background: #f1ece6;
+    }
+
+    .maps {
+      padding-top: 28px;
+    }
+
+    .map-row.burden {
+      grid-template-columns: minmax(220px, 0.52fr) minmax(560px, 1.2fr);
+      padding-top: 8px;
+      padding-bottom: 22px;
+    }
+
+    .map-row.burden .map-svg {
+      width: min(100%, 860px);
+    }
+
+    .map-row.burden .map-svg .thread {
+      stroke-width: 2.7;
+    }
+
+    .map-row.burden .map-svg .tool {
+      transform: scaleX(1.14);
+      transform-box: fill-box;
+      transform-origin: center;
+    }
+
+    .maps .master-line {
+      margin: 12px auto 0;
+    }
+
+    .map-row.layer {
+      margin-top: 0;
+      padding-top: 18px;
+    }
+
+    .top-strip {
+      display: none;
+    }
+
+    .nav {
+      top: 0;
+      color: #f3ebe5;
+      background: #1b347f;
+    }
+
+    .nav-links {
+      color: rgba(243, 235, 229, 0.78);
+    }
+
+    .hero.hero-proto {
+      padding-top: 94px;
+    }
+
+    .hero-proto-center {
+      transform: translateY(calc(-20px + var(--copy-shift)));
+    }
+
+    @media (max-width: 850px) {
+
+      .map-row.burden,
+      .map-row.layer {
+        grid-template-columns: 1fr;
+      }
+
+      .map-row.burden .map-svg,
+      .map-row.layer .map-svg {
+        grid-column: 1;
+        grid-row: auto;
+        justify-self: center;
+      }
+
+      .map-row.layer .map-label {
+        grid-column: 1;
+        grid-row: auto;
+      }
+    }
+
+    @media (max-width: 700px) {
+      .top-strip {
+        display: none;
+      }
+
+      .hero-proto-center .hero-headline {
+        font-size: 40px;
+      }
+
+      .hero-product {
+        font-size: 14px;
+      }
+
+      .maps {
+        padding-top: 22px;
+      }
+
+      .benchmark-section {
+        padding-top: 58px;
+      }
+    }
+
+    /*
+       * Final responsive composition
+       * ----------------------------
+       * The artwork fills the viewport. Individual content rows retain a
+       * readable measure, but the page itself is never presented as a fixed
+       * desktop-sized canvas when the browser is zoomed out.
+       */
+    html,
+    body {
+      width: 100%;
+      overflow-x: hidden;
+    }
+
+    .page {
+      width: 100%;
+      max-width: none;
+      margin: 0;
+    }
+
+    .nav {
+      left: 0;
+      width: 100%;
+      transform: none;
+    }
+
+    .hero.hero-proto {
+      width: 100%;
+      height: 100svh;
+      min-height: 650px;
+      max-height: none;
+      --tide-inner-shift: 0px;
+    }
+
+    /* Keep the tide fixed: scrolling should reveal the next depth, not
+         manufacture another moving slab between the two sections. */
+    .memory-terrain {
+      transform: none;
+      will-change: auto;
+    }
+
+    .maps {
+      margin-top: -1px;
+      padding-top: 44px;
+      background-color: #142b70;
+    }
+
+    .maps::before {
+      display: none;
+    }
+
+    .map-row,
+    .maps .master-line {
+      width: min(100%, 1440px);
+      margin-inline: auto;
+    }
+
+    .map-row.burden {
+      gap: clamp(56px, 7vw, 110px);
+      padding-top: 14px;
+      padding-bottom: 28px;
+    }
+
+    .map-row.burden .map-label h3 {
+      font-size: clamp(60px, 3.35vw, 52px);
+    }
+
+    .map-row.burden .map-svg {
+      position: relative;
+      left: -15px;
+    }
+
+    .maps .master-line {
+      margin-top: 0;
+      margin-bottom: 0;
+    }
+
+    .maps .master-line em {
+      color: #e2b64f;
+    }
+
+    .map-row.layer {
+      padding-top: 28px;
+    }
+
+    .map-row.layer .map-label {
+      position: relative;
+      left: -20px;
+      top: -12px;
+    }
+
+    .map-row.layer .map-label h3 {
+      font-size: clamp(30px, 2.15vw, 40px);
+    }
+
+    .map-row.layer .map-svg .person,
+    .map-row.layer .map-svg .tool {
+      transform: scale(1.16);
+      transform-box: fill-box;
+      transform-origin: center;
+    }
+
+    @media (max-width: 1100px) {
+      .map-row.burden {
+        grid-template-columns: minmax(210px, 0.48fr) minmax(500px, 1fr);
+        gap: clamp(36px, 5vw, 64px);
+      }
+    }
+
+    @media (max-width: 850px) {
+      .hero.hero-proto {
+        min-height: 620px;
+      }
+
+      .map-row.burden .map-svg {
+        left: 0;
+      }
+
+      .map-row.layer .map-label {
+        left: 0;
+        top: 0;
+      }
+    }
+
+    @media (max-width: 700px) {
+      .hero.hero-proto {
+        height: 100svh;
+        min-height: 600px;
+      }
+
+      .maps {
+        padding-top: 34px;
+      }
+
+      .map-row.burden {
+        gap: 20px;
+        padding-bottom: 22px;
+      }
+
+      .map-row.layer {
+        padding-top: 22px;
+      }
+    }
+
+    /* Annotated refinement for navigation and the memory diagrams. */
+    .nav-links {
+      font-weight: 500;
+    }
+
+    /* The SVG stays fixed. Only its internal artwork moves over this fixed
+         navy bed, so scrolling cannot reveal a rectangular gap. */
+    .memory-terrain {
+      transform: none;
+      will-change: auto;
+    }
+
+    .memory-terrain>.mass,
+    .memory-terrain>g {
+      transform: translateY(var(--tide-inner-shift));
+      will-change: transform;
+    }
+
+    .memory-terrain>.mass.mid {
+      transform: translateY(calc(var(--tide-inner-shift) - 24px));
+    }
+
+    .memory-terrain>.mass.cobalt {
+      transform: translateY(calc(var(--tide-inner-shift) - 14px));
+    }
+
+    .maps {
+      background-color: #142b70;
+      background-image:
+        radial-gradient(circle,
+          rgba(243, 235, 229, 0.16) 1px,
+          transparent 1.1px),
+        linear-gradient(180deg,
+          #1b347f 0%,
+          #192f79 12%,
+          #142b70 34%,
+          #142b70 100%);
+      background-size:
+        28px 28px,
+        100% 100%;
+    }
+
+    .map-row.burden .map-label h3 {
+      font-size: clamp(38px, 3vw, 52px);
+    }
+
+    .maps .master-line {
+      max-width: 900px;
+    }
+
+    .map-row.layer {
+      grid-template-columns: minmax(610px, 1.18fr) minmax(300px, 0.5fr);
+      gap: clamp(18px, 2.6vw, 38px);
+      padding-top: 58px;
+    }
+
+    .map-row.layer .map-svg {
+      width: min(100%, 900px);
+    }
+
+    .map-row.layer .map-label {
+      left: -8px;
+    }
+
+    .map-row.layer .map-label h3 {
+      font-size: clamp(36px, 3vw, 48px);
+    }
+
+    @media (max-width: 1100px) {
+      .map-row.layer {
+        grid-template-columns: minmax(520px, 1.1fr) minmax(260px, 0.52fr);
+        gap: 18px;
+      }
+    }
+
+    @media (max-width: 850px) {
+      .map-row.layer {
+        grid-template-columns: 1fr;
+        gap: 24px;
+        padding-top: 42px;
+      }
+
+      .map-row.layer .map-svg {
+        width: min(100%, 820px);
+      }
+    }
+
+    @media (max-width: 700px) {
+      .map-row.layer {
+        padding-top: 32px;
+      }
+    }
+
+    /* Keep the core statement optically centered between both diagrams. */
+    .maps {
+      --diagram-message-gap: 46px;
+    }
+
+    .map-row.burden {
+      padding-bottom: var(--diagram-message-gap);
+    }
+
+    .map-row.layer {
+      padding-top: var(--diagram-message-gap);
+    }
+
+    @media (max-width: 700px) {
+      .maps {
+        --diagram-message-gap: 30px;
+      }
+    }
+
+    /* Hero scale and position. Only the copy block moves. */
+    .hero-proto-center {
+      transform: translateY(calc(-30px + var(--copy-shift)));
+    }
+
+    .hero-proto-center .hero-headline {
+      font-size: clamp(44px, 5.1vw, 74px);
+    }
+
+    /* Keep the pink band slightly slimmer than the two blue layers. */
+    .memory-terrain>.mass.mid {
+      transform: translateY(calc(var(--tide-inner-shift) - 16px));
+    }
+
+    /* Preserve the number of traces while opening their vertical rhythm. */
+    .memory-terrain .pink-thread:nth-child(1) {
+      transform: translateY(5px);
+    }
+
+    .memory-terrain .pink-thread:nth-child(2) {
+      transform: translateY(9px);
+    }
+
+    .memory-terrain .pink-thread:nth-child(3) {
+      transform: translateY(13px);
+    }
+
+    .memory-terrain .topoline:nth-child(2) {
+      transform: translateY(2px);
+    }
+
+    .memory-terrain .topoline:nth-child(3) {
+      transform: translateY(4px);
+    }
+
+    .memory-terrain .topoline:nth-child(4) {
+      transform: translateY(6px);
+    }
+
+    .memory-terrain .topoline:nth-child(5) {
+      transform: translateY(8px);
+    }
+
+    .memory-terrain .topoline:nth-child(6) {
+      transform: translateY(10px);
+    }
+
+    .memory-terrain .topoline:nth-child(7) {
+      transform: translateY(12px);
+    }
+
+    /* Scroll through the tide before continuing through the document. */
+    .page {
+      overflow: visible;
+    }
+
+    .tide-scroll {
+      position: relative;
+      height: 165svh;
+      background: #1b347f;
+    }
+
+    .tide-scroll .hero.hero-proto {
+      position: sticky;
+      top: 0;
+      height: 100svh;
+      min-height: 0;
+      --halo-opacity: 1;
+    }
+
+    .tide-underfill {
+      position: absolute;
+      z-index: 6;
+      right: 0;
+      bottom: -24px;
+      left: 0;
+      height: calc(var(--tide-cover, 0px) + 112px);
+      pointer-events: none;
+      background: #1b347f;
+    }
+
+    .memory-terrain .pink-thread {
+      display: none;
+    }
+
+    /* The navbar remains available throughout the story. */
+    .nav {
+      position: fixed;
+      z-index: 50;
+    }
+
+    /* The rising artwork physically submerges the copy. */
+    .memory-terrain {
+      z-index: 6;
+      bottom: -24px;
+    }
+
+    html,
+    body {
+      overflow-x: clip;
+      overflow-y: visible;
+    }
+
+    .maps {
+      position: relative;
+      z-index: 1;
+      min-height: 100svh;
+      margin-top: -1px;
+      transform: none;
+      will-change: auto;
+      background-color: #142b70;
+      background-image:
+        radial-gradient(circle,
+          rgba(243, 235, 229, 0.16) 1px,
+          transparent 1.1px),
+        linear-gradient(180deg,
+          #1b347f 0%,
+          #1b347f 18%,
+          #192f79 42%,
+          #142b70 72%,
+          #142b70 100%);
+    }
+
+    .hero-proto-center::before {
+      opacity: var(--halo-opacity);
+    }
+
+    /* The first memory row surfaces from inside the expanded navy wave. */
+    .tide-burden {
+      position: absolute;
+      z-index: 8;
+      top: 0;
+      right: var(--edge);
+      left: var(--edge);
+      width: min(calc(100% - (2 * var(--edge))), 1440px);
+      margin-inline: auto;
+      padding-top: 0;
+      padding-bottom: 0;
+      border: 0;
+      opacity: var(--burden-opacity, 0);
+      transform: translate3d(0, var(--burden-y, 105svh), 0);
+      transition: none;
+      pointer-events: none;
+      will-change: transform, opacity;
+    }
+
+    .tide-burden .map-label span {
+      color: #d99aaf;
+    }
+
+    .tide-burden .map-label h3,
+    .tide-burden .map-svg text {
+      color: #f3ebe5;
+      fill: #f3ebe5;
+    }
+
+    .tide-burden .map-label p {
+      color: rgba(243, 235, 229, 0.66);
+    }
+
+    .tide-burden .map-svg .tool {
+      fill: #1b347f;
+      stroke: #f3ebe5;
+    }
+
+    .tide-burden .map-svg .person {
+      stroke: #f3ebe5;
+    }
+
+    /* Public tuning controls for the narrative diagrams. */
+    :root {
+      --wave-content-gap: 60px;
+      --tide-diagram-scale: 1.18;
+      --layer-diagram-scale: 1.16;
+      --layer-diagram-shift: -72px;
+    }
+
+    .tide-burden .map-label {
+      position: relative;
+    }
+
+    .tide-burden .map-label>span {
+      display: none;
+    }
+
+    .tide-burden .map-label h3 {
+      max-width: 520px;
+      font-size: clamp(48px, 4vw, 66px);
+      font-weight: 600;
+    }
+
+    .tide-burden .map-svg {
+      left: 0;
+      transform: scale(var(--tide-diagram-scale));
+      transform-origin: center center;
+    }
+
+    .maps {
+      min-height: auto;
+      padding: 48px var(--edge) 58px;
+      overflow: hidden;
+      background-image: linear-gradient(180deg,
+          #1b347f 0%,
+          #1b347f 16%,
+          #192f79 42%,
+          #142b70 72%,
+          #142b70 100%);
+    }
+
+    .maps::before {
+      content: "";
+      position: absolute;
+      z-index: 0;
+      inset: 0;
+      display: block;
+      pointer-events: none;
+      opacity: 1;
+      background-image: radial-gradient(circle,
+          rgba(243, 235, 229, 0.15) 1px,
+          transparent 1.1px);
+      background-size: 28px 28px;
+    }
+
+    .maps>* {
+      position: relative;
+      z-index: 1;
+    }
+
+    .maps .master-line {
+      max-width: 1120px;
+      font-size: clamp(48px, 5.2vw, 78px);
+      font-weight: 600;
+    }
+
+    .map-row.layer {
+      grid-template-columns: minmax(650px, 1.2fr) minmax(330px, 0.5fr);
+      gap: clamp(20px, 3vw, 48px);
+      padding-bottom: 22px;
+    }
+
+    .map-row.layer .map-svg {
+      width: min(100%, 980px);
+      transform: translateX(var(--layer-diagram-shift)) scale(var(--layer-diagram-scale));
+      transform-origin: left center;
+    }
+
+    /* The successful architecture returns to the same solid memory blue. */
+    .map-row.layer {
+      width: calc(100% + var(--edge) + var(--edge));
+      max-width: none;
+      margin: 0 0 0 calc(0px - var(--edge));
+      padding: var(--diagram-message-gap) var(--edge) 58px;
+      background: #1b347f;
+    }
+
+    .map-row.layer .map-label {
+      position: relative;
+    }
+
+    .map-row.layer .map-label>span {
+      display: none;
+    }
+
+    .map-row.layer .map-label h3 {
+      font-size: clamp(46px, 4vw, 66px);
+      font-weight: 600;
+    }
+
+    .benchmark-section {
+      padding: clamp(64px, 7vw, 104px) var(--edge);
+      color: #f3ebe5;
+      background: #afc1e8;
+    }
+
+    .benchmark {
+      width: min(100%, 1440px);
+      margin-inline: auto;
+      padding: clamp(46px, 5vw, 76px);
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      border-radius: 26px;
+      background: #11131d;
+      box-shadow: 0 34px 80px rgba(40, 58, 115, 0.22);
+    }
+
+    .principles-head {
+      max-width: 1180px;
+      margin-bottom: 70px;
+    }
+
+    .principles h2 {
+      font-size: clamp(58px, 7.4vw, 112px);
+      font-weight: 600;
+      line-height: 0.93;
+      letter-spacing: -0.065em;
+    }
+
+    .principle h3 {
+      font-size: clamp(27px, 2.2vw, 36px);
+      font-weight: 600;
+    }
+
+    @media (max-width: 1100px) {
+      .map-row.layer {
+        grid-template-columns: minmax(520px, 1fr) minmax(270px, 0.48fr);
+      }
+    }
+
+    @media (max-width: 850px) {
+      .map-row.layer {
+        grid-template-columns: 1fr;
+      }
+
+      .map-row.layer .map-svg {
+        transform: scale(var(--layer-diagram-scale));
+        transform-origin: center;
+      }
+    }
+
+    @media (max-width: 700px) {
+      .benchmark-section {
+        padding-inline: 18px;
+      }
+
+      .benchmark {
+        padding: 34px 20px;
+        border-radius: 20px;
+      }
+
+      .principles h2 {
+        font-size: clamp(48px, 15vw, 72px);
+      }
+    }
+
+    /* Final narrative sections. */
+    .nav {
+      border-bottom: 1px solid rgba(255, 255, 255, 0.24);
+    }
+
+    /* Keep the complete diagram chapter on one unbroken field of navy. */
+    .maps {
+      padding-top: 0;
+      padding-bottom: 0;
+      background-color: #1b347f;
+      background-image: none;
+    }
+
+    .maps .master-line {
+      position: relative;
+      z-index: 5;
+      width: calc(100% + var(--edge) + var(--edge));
+      max-width: none;
+      margin: 0 0 0 calc(0px - var(--edge));
+      padding: clamp(74px, 8vw, 118px) var(--edge);
+      color: #f7eee8;
+      background-color: #d99aaf;
+      background-image:
+        radial-gradient(circle,
+          rgba(27, 52, 127, 0.22) 1px,
+          transparent 1.2px),
+        linear-gradient(120deg, rgba(255, 255, 255, 0.08), transparent 48%);
+      background-size:
+        30px 30px,
+        100% 100%;
+      border: 0;
+      box-shadow: none !important;
+      filter: none;
+      text-shadow: none;
+    }
+
+    .maps .master-line::before,
+    .maps .master-line::after {
+      display: none;
+    }
+
+    .maps .master-line em {
+      color: #1b347f;
+    }
+
+    :root {
+      --layer-diagram-shift: -110px;
+    }
+
+    .map-row.layer {
+      padding-top: 112px;
+      border: 0;
+      box-shadow: none;
+    }
+
+    .tide-burden {
+      grid-template-columns: minmax(560px, 0.95fr) minmax(560px, 1fr);
+      gap: clamp(48px, 5vw, 88px);
+    }
+
+    .map-row.layer {
+      grid-template-columns: minmax(620px, 1.05fr) minmax(500px, 0.8fr);
+      gap: clamp(48px, 5vw, 88px);
+    }
+
+    .architecture-heading,
+    .tide-burden .map-label>.architecture-heading,
+    .map-row.layer .map-label>.architecture-heading {
+      display: block !important;
+      position: relative;
+      z-index: 4;
+      width: max-content;
+      margin: 0 0 38px;
+      font: italic 400 clamp(52px, 4.2vw, 70px) / 0.95 "Instrument Serif",
+        serif !important;
+      letter-spacing: -0.015em;
+      text-transform: none;
+      overflow: visible;
+    }
+
+    .architecture-arrow {
+      display: block !important;
+      position: absolute;
+      z-index: 5;
+      top: 5px;
+      width: clamp(300px, 26vw, 470px);
+      height: 84px;
+      overflow: visible;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 3.5;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .without-heading .architecture-arrow {
+      left: calc(100% + 2px);
+      transform: rotate(-2deg);
+    }
+
+    /* This doodle points back to the Meniscus diagram on the left. */
+    .with-heading .architecture-arrow {
+      right: calc(100% - 2px);
+      width: clamp(250px, 20vw, 360px);
+      transform: rotate(2deg);
+    }
+
+    .without-heading,
+    .tide-burden .map-label>.without-heading {
+      color: #b6424b;
+    }
+
+    .with-heading,
+    .map-row.layer .map-label>.with-heading {
+      color: #42a878;
+    }
+
+    /* Keep the problem diagram clear of the expanded editorial copy. */
+    :root {
+      --tide-diagram-scale: 1.12;
+    }
+
+    .tide-burden .map-svg {
+      justify-self: end;
+      transform: translateX(76px) scale(var(--tide-diagram-scale));
+    }
+
+    /* Let the solved diagram and every outgoing thread finish before
+         the closing waterline begins. */
+    .map-row.layer {
+      padding-bottom: clamp(120px, 9vw, 165px);
+    }
+
+    .architecture-points {
+      width: 100%;
+      max-width: 560px;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      justify-items: start;
+      gap: 15px;
+      list-style: none;
+      color: #15255e;
+      font-family: var(--sans);
+    }
+
+    .architecture-points li {
+      position: relative;
+      width: 100%;
+      max-width: 560px;
+      min-width: 0;
+      padding: 14px 48px 15px 26px;
+      clip-path: polygon(0 0,
+          calc(100% - 24px) 0,
+          100% 50%,
+          calc(100% - 24px) 100%,
+          0 100%,
+          13px 50%);
+      overflow: hidden;
+    }
+
+    .architecture-points strong,
+    .architecture-points small {
+      display: block;
+      max-width: 100%;
+      overflow-wrap: anywhere;
+    }
+
+    .architecture-points strong {
+      font: 600 clamp(19px, 1.55vw, 27px) / 1.08 var(--sans);
+      letter-spacing: -0.035em;
+    }
+
+    .architecture-points small {
+      margin-top: 6px;
+      color: rgba(21, 37, 94, 0.72);
+      font: 500 clamp(11px, 0.82vw, 14px) / 1.4 var(--sans);
+      letter-spacing: -0.01em;
+    }
+
+    .architecture-points li:nth-child(1) {
+      background: #e1a3b8;
+    }
+
+    .architecture-points li:nth-child(2) {
+      background: #a9bee8;
+    }
+
+    .architecture-points li:nth-child(3) {
+      background: #d9b34e;
+    }
+
+    .architecture-points li::before {
+      content: none;
+    }
+
+    .map-row.layer .architecture-points li:nth-child(1) {
+      background: #79d5a2;
+    }
+
+    .map-row.layer .architecture-points li:nth-child(2) {
+      background: #a9bee8;
+    }
+
+    .map-row.layer .architecture-points li:nth-child(3) {
+      background: #e1a3b8;
+    }
+
+    @media (max-width: 1200px) {
+
+      .tide-burden,
+      .map-row.layer {
+        grid-template-columns: minmax(420px, 0.9fr) minmax(440px, 1fr);
+      }
+
+      .architecture-points {
+        max-width: 470px;
+      }
+    }
+
+    @media (max-width: 850px) {
+      .map-row.layer {
+        grid-template-columns: 1fr;
+        padding-top: 78px;
+      }
+
+      .tide-burden {
+        grid-template-columns: 1fr 1.15fr;
+        gap: 22px;
+      }
+
+      .architecture-arrow {
+        width: 180px;
+        height: 58px;
+      }
+
+      .without-heading .architecture-arrow {
+        left: calc(100% + 2px);
+      }
+
+      .with-heading .architecture-arrow {
+        right: calc(100% - 2px);
+      }
+
+      .architecture-points li {
+        padding: 11px 36px 12px 21px;
+      }
+    }
+
+    .demo-section {
+      position: relative;
+      padding: clamp(72px, 8vw, 118px) var(--edge);
+      background: #f1ece6;
+    }
+
+    .demo-shell {
+      width: min(100%, 1240px);
+      margin-inline: auto;
+    }
+
+    .demo-label {
+      margin-bottom: 16px;
+      color: rgba(21, 22, 43, 0.5);
+      font: 500 10px var(--mono);
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+
+    .demo-placeholder {
+      aspect-ratio: 16 / 9;
+      display: grid;
+      place-content: center;
+      gap: 8px;
+      border: 1px dashed rgba(21, 22, 43, 0.28);
+      border-radius: 22px;
+      color: rgba(21, 22, 43, 0.56);
+      text-align: center;
+      background:
+        radial-gradient(circle at center,
+          rgba(175, 193, 232, 0.24),
+          transparent 48%),
+        #ebe5e0;
+    }
+
+    .demo-placeholder span {
+      font: 600 clamp(25px, 3vw, 42px) var(--display);
+      letter-spacing: -0.04em;
+    }
+
+    .demo-placeholder small {
+      font: 500 9px var(--mono);
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    .benchmark-section {
+      background: #b7c8ec;
+    }
+
+    .benchmark {
+      width: min(100%, 1120px);
+      background: #0a0a0d;
+    }
+
+    .benchmark .scorecards {
+      margin-bottom: 52px;
+    }
+
+    .benchmark .score {
+      min-width: 190px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 14px;
+      background: #131318;
+    }
+
+    .benchmark .context-score strong {
+      color: #d3ae66;
+    }
+
+    .benchmark .recall-score strong {
+      color: #d99aaf;
+    }
+
+    .benchmark .score strong {
+      font-size: clamp(32px, 4vw, 44px);
+    }
+
+    .benchmark .chart {
+      height: 380px;
+    }
+
+    .benchmark .bar-item {
+      width: calc(100% / 6);
+    }
+
+    .benchmark .bar {
+      width: min(58px, 46%);
+      background: var(--bar-color) !important;
+    }
+
+    .benchmark .bar::before {
+      top: -25px;
+      color: var(--bar-color);
+    }
+
+    .benchmark .bar-item label {
+      height: 38px;
+      padding-inline: 4px;
+      font-size: 8px;
+    }
+
+    .principles {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 20px;
+    }
+
+    .principles-head {
+      grid-column: 1 / -1;
+    }
+
+    .principle {
+      min-height: 350px;
+      padding: 30px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+      border: 0;
+      border-radius: 24px;
+      color: #15162b;
+      box-shadow: 0 20px 54px rgba(31, 41, 81, 0.1);
+    }
+
+    .principle:nth-of-type(1) {
+      background: #d99aaf;
+    }
+
+    .principle:nth-of-type(2) {
+      background: #afc1e8;
+    }
+
+    .principle:nth-of-type(3) {
+      background: #dfbc62;
+    }
+
+    .principle:last-child {
+      border-bottom: 0;
+    }
+
+    .principle>span {
+      width: 38px;
+      height: 38px;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(21, 22, 43, 0.3);
+      border-radius: 50%;
+      color: #15162b;
+    }
+
+    .principle h3 {
+      margin-top: 16px;
+    }
+
+    .principle-copy {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .principle-copy p {
+      margin-top: 0;
+      font-size: 15px;
+      line-height: 1.65;
+    }
+
+    .principle .mini {
+      margin-top: auto;
+      border-color: rgba(21, 22, 43, 0.16);
+      background: rgba(255, 255, 255, 0.17);
+    }
+
+    .maps .map-svg .memory {
+      fill: #2447b6;
+      stroke: #f3ebe5;
+    }
+
+    .maps .map-svg .control-thread {
+      stroke-width: 3;
+    }
+
+    /* Inverted echo of the hero waves: the navy chapter resurfaces to paper. */
+    .chapter-outro-waves {
+      position: relative;
+      z-index: 6;
+      width: calc(100% + var(--edge) + var(--edge));
+      height: clamp(280px, 28.6vw, 430px);
+      margin: 0 0 0 calc(0px - var(--edge));
+      overflow: hidden;
+      background: #f1ece6;
+    }
+
+    .chapter-outro-waves svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .chapter-outro-waves .outro-mass.rose {
+      fill: #d99aaf;
+      transform: scaleY(1.35);
+    }
+
+    .chapter-outro-waves .outro-mass.sky {
+      fill: #9aade0;
+      transform: scaleY(1.35);
+    }
+
+    .chapter-outro-waves .outro-mass.indigo {
+      fill: #1b347f;
+      transform: scaleY(1.25);
+    }
+
+    .chapter-outro-waves .outro-mass {
+      transform-box: fill-box;
+      transform-origin: 50% 100%;
+    }
+
+    .chapter-outro-waves .outro-lines path {
+      fill: none;
+      stroke: rgba(243, 235, 229, 0.8);
+      stroke-width: 1.5;
+      stroke-linecap: round;
+      stroke-dasharray: 2 8;
+    }
+
+    .chapter-outro-waves .rose-lines path {
+      stroke: rgba(78, 77, 133, 0.48);
+    }
+
+    .chapter-outro-waves .outro-lines {
+      transform-box: fill-box;
+      transform-origin: 50% 100%;
+    }
+
+    .chapter-outro-waves .indigo-lines {
+      transform: scaleY(1.32);
+    }
+
+    .chapter-outro-waves .rose-lines {
+      transform: scaleY(1.28);
+    }
+
+    /* The paper chapter: show it, explain why it is trustworthy, prove it. */
+    .demo-section {
+      padding: clamp(46px, 5vw, 74px) var(--edge) clamp(84px, 9vw, 132px);
+      background: #f1ece6;
+    }
+
+    .demo-shell {
+      width: min(100%, 1380px);
+    }
+
+    .demo-label {
+      margin-bottom: 10px;
+    }
+
+    .demo-title {
+      margin: 0 0 24px;
+      color: #15162b;
+      font: 600 30px/1.15 var(--display);
+      letter-spacing: -0.04em;
+    }
+
+    .demo-placeholder {
+      position: relative;
+      border: 1px solid rgba(27, 52, 127, 0.28);
+      border-radius: 26px;
+      color: rgba(243, 235, 229, 0.82);
+      background:
+        radial-gradient(circle at 76% 32%,
+          rgba(217, 154, 175, 0.26),
+          transparent 28%),
+        radial-gradient(circle at 22% 76%,
+          rgba(169, 190, 232, 0.2),
+          transparent 31%),
+        #172d70;
+      box-shadow: none;
+      overflow: hidden;
+    }
+
+    .demo-placeholder::before {
+      content: "";
+      position: absolute;
+      inset: 18px;
+      border: 1px dashed rgba(243, 235, 229, 0.2);
+      border-radius: 17px;
+      pointer-events: none;
+    }
+
+    .demo-placeholder span,
+    .demo-placeholder small {
+      position: relative;
+      z-index: 1;
+    }
+
+    .principles {
+      padding: clamp(82px, 9vw, 138px) var(--edge);
+      background:
+        radial-gradient(circle at 12% 22%,
+          rgba(217, 154, 175, 0.13),
+          transparent 23%),
+        #f1ece6;
+    }
+
+    .principles-head {
+      max-width: 1180px;
+      margin-bottom: clamp(48px, 6vw, 82px);
+    }
+
+    .principles h2 {
+      max-width: 1160px;
+      font-size: clamp(58px, 7.4vw, 112px);
+      line-height: 0.93;
+    }
+
+    .principle {
+      box-shadow: none;
+    }
+
+    .benchmark-section {
+      position: relative;
+      padding: clamp(88px, 9vw, 142px) var(--edge);
+      color: #f3ebe5;
+      background: #afc1e8;
+    }
+
+    .benchmark-entry-wave,
+    .install-entry-wave {
+      position: absolute;
+      z-index: 1;
+      top: -78px;
+      right: 0;
+      left: 0;
+      height: 80px;
+      pointer-events: none;
+    }
+
+    .benchmark-entry-wave svg,
+    .install-entry-wave svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+      overflow: visible;
+    }
+
+    .benchmark-entry-wave path:last-child,
+    .install-entry-wave path:last-child {
+      fill: none;
+      stroke: rgba(243, 235, 229, 0.66);
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-dasharray: 3 10;
+    }
+
+    .benchmark-shell {
+      position: relative;
+      z-index: 2;
+      width: min(100%, 1440px);
+      margin-inline: auto;
+    }
+
+    .benchmark-intro {
+      max-width: 980px;
+      margin-bottom: clamp(38px, 5vw, 66px);
+      color: #15162b;
+    }
+
+    .benchmark-intro .kicker {
+      color: rgba(21, 22, 43, 0.62);
+    }
+
+    .benchmark-intro h2 {
+      margin: 16px 0 0;
+      font: 600 clamp(52px, 6.4vw, 94px) / 0.94 var(--display);
+      letter-spacing: -0.06em;
+    }
+
+    .benchmark {
+      width: 100%;
+      padding: clamp(46px, 5vw, 76px);
+      border: 1px solid rgba(243, 235, 229, 0.12);
+      border-radius: 28px;
+      color: #f3ebe5;
+      background:
+        radial-gradient(circle,
+          rgba(243, 235, 229, 0.09) 1px,
+          transparent 1.1px),
+        #101f55;
+      background-size: 30px 30px, auto;
+      box-shadow: none;
+    }
+
+    .bench-head h3 {
+      margin: 0;
+      font: 500 clamp(42px, 5vw, 72px) / 1 var(--display);
+      letter-spacing: -0.055em;
+      text-align: center;
+    }
+
+    .bench-head p {
+      color: rgba(243, 235, 229, 0.48);
+    }
+
+    .benchmark .score {
+      border-color: rgba(243, 235, 229, 0.1);
+      background: rgba(36, 71, 182, 0.42);
+    }
+
+    .benchmark .score span,
+    .benchmark .bar-item label,
+    .benchmark .bench-note {
+      color: rgba(243, 235, 229, 0.58);
+    }
+
+    .benchmark .chart {
+      border-bottom-color: rgba(243, 235, 229, 0.2);
+      background: repeating-linear-gradient(to bottom,
+          transparent 0,
+          transparent calc(25% - 1px),
+          rgba(243, 235, 229, 0.11) calc(25% - 1px),
+          rgba(243, 235, 229, 0.11) 25%);
+    }
+
+    .install {
+      position: relative;
+      padding-top: clamp(92px, 10vw, 150px);
+      overflow: visible;
+      background: #0b1d63;
+    }
+
+    .install-entry-wave {
+      top: -82px;
+      height: 84px;
+    }
+
+    .install-grid,
+    .install-art,
+    .install .footer {
+      position: relative;
+      z-index: 2;
+    }
+
+    .install-copy>p {
+      max-width: 540px;
+      margin: 22px 0 0;
+      color: rgba(247, 234, 229, 0.64);
+      font-size: 16px;
+      line-height: 1.6;
+    }
+
+    .install-art {
+      position: relative;
+      width: calc(100% + var(--edge) + var(--edge));
+      height: clamp(220px, 24vw, 370px);
+      margin: clamp(64px, 8vw, 120px) 0 0 calc(0px - var(--edge));
+      transform: translateY(20px);
+      overflow: hidden;
+    }
+
+    .install-art svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .install-art .memory-rings,
+    .install-art .memory-streams {
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .install-art .memory-rings {
+      stroke: #d99aaf;
+      stroke-width: 3;
+    }
+
+    .install-art .memory-rings path:nth-child(2) {
+      stroke: #a9bee8;
+    }
+
+    .install-art .memory-rings path:nth-child(3) {
+      stroke: #d9b34e;
+    }
+
+    .install-art .memory-rings path:nth-child(4) {
+      stroke: #f3ebe5;
+    }
+
+    .install-art .memory-streams {
+      stroke: rgba(169, 190, 232, 0.72);
+      stroke-width: 2;
+      stroke-dasharray: 3 10;
+    }
+
+    .install-art .memory-streams path:nth-child(even) {
+      stroke: rgba(217, 154, 175, 0.75);
+    }
+
+    .install-art>span {
+      position: absolute;
+      top: 48%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: #f3ebe5;
+      font: italic 400 clamp(28px, 3vw, 48px) / 1 "Instrument Serif",
+        serif;
+      white-space: nowrap;
+    }
+
+    .install .footer {
+      margin-top: 20px;
+      border-top: 0;
+    }
+
+    /* Actions use saturated signal colors so they remain legible on each surface. */
+    .nav-links .nav-cta,
+    .hero-actions .source-cta {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      border: 0;
+      border-radius: 5px;
+      color: #142b70;
+      background: #d9b34e;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+    }
+
+    .nav-links .nav-cta {
+      margin-block: -9px;
+      padding: 7px 7px 7px 11px;
+    }
+
+    .hero-actions .source-cta {
+      padding: 7px 7px 7px 14px;
+      color: #142b70;
+      background: #d9b34e;
+      border-color: #d9b34e;
+    }
+
+    /* The install command sits on the paper like a small terminal receipt. */
+    .hero-install-snippet {
+      position: relative;
+      width: min(100%, 520px);
+      overflow: hidden;
+      text-align: left;
+      color: #142b70;
+      background: rgba(247, 241, 236, 0.92);
+      border: 1px solid rgba(20, 43, 112, 0.28);
+      box-shadow: 5px 5px 0 rgba(217, 154, 175, 0.42);
+    }
+
+    .hero-install-snippet code {
+      display: block;
+      padding: 15px 54px 16px 18px;
+      color: #142b70;
+      font: 500 clamp(13px, 1vw, 15px)/1.75 var(--mono);
+      letter-spacing: -0.015em;
+    }
+
+    .hero-command-line {
+      display: block;
+      white-space: nowrap;
+    }
+
+    .hero-command-line::before {
+      content: "›";
+      display: inline-block;
+      width: 18px;
+      color: #bd6473;
+      font-weight: 500;
+      user-select: none;
+    }
+
+    .hero-copy-btn {
+      position: absolute;
+      z-index: 2;
+      top: 10px;
+      right: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      padding: 0;
+      border: 1px solid rgba(20, 43, 112, 0.24);
+      color: #142b70;
+      background: rgba(226, 160, 184, 0.5);
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+
+    .hero-copy-btn:hover {
+      color: #f3ebe5;
+      background: #bd6473;
+      border-color: #bd6473;
+    }
+
+    .hero-copy-btn.copied {
+      color: #f3ebe5;
+      background: #4d9a74;
+      border-color: #4d9a74;
+    }
+
+    .hero-copy-btn svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    .hero-copy-btn.copied svg {
+      display: none;
+    }
+
+    .hero-copy-btn.copied::after {
+      content: "✓";
+      font: 600 28px/1 var(--mono);
+    }
+
+    .hero-actions {
+      margin-top: 19px;
+      transform: translateY(-3px);
+    }
+
+    @media (max-width: 560px) {
+      .hero-install-snippet {
+        width: min(100%, 390px);
+        box-shadow: 4px 4px 0 rgba(217, 154, 175, 0.38);
+      }
+
+      .hero-install-snippet code {
+        padding-inline: 13px;
+        padding-right: 50px;
+        font-size: 12px;
+      }
+
+      .hero-copy-btn {
+        width: 30px;
+        height: 30px;
+      }
+    }
+
+    .nav-cta b,
+    .source-cta b,
+    .benchmark-readme b {
+      width: 25px;
+      height: 25px;
+      display: grid;
+      place-items: center;
+      border-radius: 3px;
+      color: #f3ebe5;
+      background: #142b70;
+      font: 500 12px var(--mono);
+    }
+
+    /* Reproducible evidence, presented as a plain horizontal readout. */
+    .benchmark-section {
+      padding: clamp(96px, 10vw, 156px) var(--edge);
+      color: #15162b;
+      background: #f1ece6;
+    }
+
+    .benchmark-shell {
+      width: min(100%, 1380px);
+    }
+
+    .benchmark-intro {
+      max-width: 980px;
+      margin-bottom: clamp(56px, 7vw, 96px);
+    }
+
+    .benchmark-intro h2 {
+      max-width: 900px;
+      font-size: clamp(58px, 7vw, 104px);
+    }
+
+    .benchmark-intro > p {
+      max-width: 790px;
+      margin: 28px 0 0;
+      color: rgba(21, 22, 43, 0.68);
+      font-size: clamp(16px, 1.35vw, 20px);
+      line-height: 1.58;
+    }
+
+    .benchmark-readme {
+      width: max-content;
+      margin-top: 28px;
+      padding: 7px 7px 7px 14px;
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      border-radius: 5px;
+      color: #142b70;
+      background: #d9b34e;
+      font: 600 10px var(--mono);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .benchmark-results {
+      width: 100%;
+    }
+
+    .benchmark-orbits {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: clamp(22px, 4vw, 58px);
+      margin-bottom: clamp(64px, 8vw, 108px);
+    }
+
+    .benchmark-orbit {
+      width: clamp(190px, 17vw, 255px);
+      aspect-ratio: 1.18 / 1;
+      display: grid;
+      place-content: center;
+      text-align: center;
+      border: 2px solid rgba(21, 22, 43, 0.2);
+      color: #15162b;
+    }
+
+    .context-orbit {
+      border-radius: 48% 52% 45% 55% / 55% 44% 56% 45%;
+      background: #d99aaf;
+      transform: rotate(-2deg);
+    }
+
+    .recall-orbit {
+      border-radius: 53% 47% 56% 44% / 45% 57% 43% 55%;
+      background: #d9b34e;
+      transform: translateY(18px) rotate(2deg);
+    }
+
+    .benchmark-orbit strong {
+      font: 600 clamp(37px, 4vw, 59px) / 0.95 var(--display);
+      letter-spacing: -0.06em;
+    }
+
+    .benchmark-orbit span {
+      margin-top: 10px;
+      font: 500 10px/1.45 var(--mono);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .horizontal-chart {
+      display: grid;
+      gap: 20px;
+    }
+
+    .horizontal-bar {
+      position: relative;
+      height: clamp(62px, 5.4vw, 82px);
+    }
+
+    .horizontal-track {
+      position: absolute;
+      inset: 0;
+      background: rgba(21, 22, 43, 0.065);
+      overflow: hidden;
+    }
+
+    .horizontal-track span {
+      width: var(--score);
+      height: 100%;
+      display: block;
+      background: #2447b6;
+    }
+
+    .horizontal-bar strong,
+    .horizontal-bar output {
+      position: absolute;
+      z-index: 1;
+      top: 50%;
+      transform: translateY(-50%);
+      color: #f3ebe5;
+      font: 600 clamp(13px, 1.3vw, 18px) var(--mono);
+      letter-spacing: -0.02em;
+    }
+
+    .horizontal-bar strong {
+      left: 24px;
+    }
+
+    .horizontal-bar output {
+      left: clamp(250px, calc(var(--score) - 68px), calc(100% - 68px));
+    }
+
+    .benchmark-results .bench-note {
+      margin: 28px 0 0;
+      max-width: none;
+      color: rgba(21, 22, 43, 0.48);
+      text-align: left;
+    }
+
+    /* A closing sentence split across the same threads that carry the art. */
+    .install-art > .install-art-phrase {
+      position: absolute;
+      z-index: 3;
+      top: 36%;
+      width: auto;
+      color: #f3ebe5;
+      font: italic 400 clamp(42px, 5vw, 76px) / 0.95 "Instrument Serif", serif;
+      white-space: nowrap;
+      transform: none;
+    }
+
+    .install-art > .install-art-phrase.left {
+      left: 6.5%;
+    }
+
+    .install-art > .install-art-phrase.right {
+      right: 6.5%;
+      left: auto;
+      color: #d99aaf;
+    }
+
+    /* Restore the compact, one-line comparison ribbons. */
+    .architecture-points {
+      width: auto;
+      max-width: 600px;
+      font: 500 clamp(23px, 2vw, 36px) / 1.08 var(--sans);
+      letter-spacing: -0.035em;
+    }
+
+    .architecture-points li {
+      width: max-content;
+      max-width: 100%;
+      padding: 12px 52px 14px 27px;
+      overflow: visible;
+    }
+
+    /* The problem statement reads like a direct console transcript, not cards. */
+    .map-row.burden .without-heading {
+      font: 500 clamp(56px, 4.4vw, 74px) / 0.96 var(--sans) !important;
+      font-style: normal !important;
+      letter-spacing: -0.06em;
+    }
+
+    .map-row.burden .map-label {
+      align-self: start;
+      transform: translateY(-16px);
+    }
+
+    .map-row.burden .architecture-points {
+      width: max-content;
+      max-width: none;
+      gap: 11px;
+      color: #f3ebe5;
+      font-size: clamp(23px, 1.9vw, 34px);
+      line-height: 1.15;
+    }
+
+    .map-row.burden .architecture-points li,
+    .map-row.burden .architecture-points li:nth-child(1),
+    .map-row.burden .architecture-points li:nth-child(2),
+    .map-row.burden .architecture-points li:nth-child(3) {
+      width: auto;
+      padding: 3px 0 3px 38px;
+      clip-path: none;
+      color: #f3ebe5;
+      background: transparent;
+      white-space: nowrap;
+    }
+
+    .map-row.burden .architecture-points li::before {
+      content: ".>";
+      position: absolute;
+      top: 3px;
+      left: 0;
+      color: rgba(243, 235, 229, 0.58);
+      font-family: var(--mono);
+      letter-spacing: -0.12em;
+    }
+
+    .map-row.burden .architecture-points .alert-you {
+      display: inline;
+      color: #f36b57;
+      font: inherit;
+      letter-spacing: inherit;
+    }
+
+    /* Mirror the direct, terminal-like problem copy on the solved side. */
+    :root {
+      --layer-diagram-scale: 1.28;
+    }
+
+    .map-row.layer .map-label > .architecture-heading.with-heading {
+      font: 500 clamp(56px, 4.4vw, 74px) / 0.96 var(--sans) !important;
+      font-style: normal !important;
+      letter-spacing: -0.06em;
+    }
+
+    .map-row.layer .architecture-points {
+      width: max-content;
+      max-width: none;
+      gap: 11px;
+      color: #f3ebe5;
+      font: 500 clamp(23px, 1.9vw, 34px) / 1.15 var(--sans);
+      letter-spacing: -0.035em;
+    }
+
+    .map-row.layer .architecture-points li,
+    .map-row.layer .architecture-points li:nth-child(1),
+    .map-row.layer .architecture-points li:nth-child(2),
+    .map-row.layer .architecture-points li:nth-child(3) {
+      width: auto;
+      padding: 3px 0 3px 38px;
+      clip-path: none;
+      color: #f3ebe5;
+      background: transparent;
+      white-space: nowrap;
+      overflow: visible;
+    }
+
+    .map-row.layer .architecture-points li::before {
+      content: ".>";
+      position: absolute;
+      top: 3px;
+      left: 0;
+      color: rgba(243, 235, 229, 0.58);
+      font-family: var(--mono);
+      letter-spacing: -0.12em;
+    }
+
+    .map-row.layer .architecture-points .memory-emphasis {
+      display: inline;
+      color: #42a878;
+      font: inherit;
+      letter-spacing: inherit;
+    }
+
+    @media (max-width: 850px) {
+      :root {
+        --layer-diagram-scale: 1.16;
+      }
+
+      .map-row.layer .architecture-points {
+        width: 100%;
+        max-width: 100%;
+        font-size: clamp(20px, 4vw, 28px);
+      }
+    }
+
+    /* The film and principles should read as adjacent beats. */
+    .demo-section {
+      padding-top: clamp(0px, calc(2vw - 20px), 24px);
+      padding-bottom: 112px;
+    }
+
+    .principles {
+      position: relative;
+      padding: clamp(66px, 6vw, 88px) var(--edge)
+        clamp(72px, 7vw, 104px);
+      gap: 14px;
+      background: #eee1bd;
+      overflow: visible;
+    }
+
+    .principles-wave {
+      position: absolute;
+      z-index: 3;
+      top: -62px;
+      right: 0;
+      left: 0;
+      height: 64px;
+      pointer-events: none;
+    }
+
+    .principles-wave svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+      overflow: visible;
+    }
+
+    .principles-wave path {
+      fill: #eee1bd;
+    }
+
+    .principles-wave.exit {
+      top: auto;
+      bottom: -62px;
+      transform: scaleY(-1);
+    }
+
+    .principles-head {
+      max-width: 900px;
+      margin: 0 auto clamp(42px, 5vw, 64px);
+      text-align: center;
+    }
+
+    .principles h2 {
+      margin: 0;
+      font-size: clamp(44px, 5.4vw, 74px);
+      line-height: 0.98;
+      letter-spacing: -0.055em;
+    }
+
+    .principle {
+      position: relative;
+      min-height: 245px;
+      padding: 28px;
+      border: 1px solid rgba(21, 22, 43, 0.2);
+      border-top: 3px solid #15162b;
+      border-radius: 0;
+      background: rgba(255, 255, 255, 0.25);
+      box-shadow: none;
+      clip-path: polygon(0 0, calc(100% - 24px) 0, 100% 24px, 100% 100%, 0 100%);
+    }
+
+    .principle:nth-of-type(1) {
+      background: rgba(255, 255, 255, 0.25);
+    }
+
+    .principle:nth-of-type(2) {
+      background: rgba(255, 255, 255, 0.25);
+    }
+
+    .principle:nth-of-type(3) {
+      background: rgba(255, 255, 255, 0.25);
+    }
+
+    .principle > span {
+      position: absolute;
+      top: 21px;
+      right: 25px;
+      width: auto;
+      height: auto;
+      border: 0;
+      border-radius: 0;
+      color: rgba(21, 22, 43, 0.36);
+      font: 500 24px var(--mono);
+    }
+
+    .principle h3 {
+      margin: 42px 0 0;
+      font-size: clamp(28px, 2.25vw, 36px);
+    }
+
+    .principle-copy p {
+      color: rgba(21, 22, 43, 0.74);
+      font-size: clamp(16px, 1.15vw, 18px);
+      line-height: 1.58;
+    }
+
+    .principle .mini {
+      font-size: clamp(11px, 0.82vw, 13px);
+      line-height: 1.55;
+    }
+
+    /* One compact Mem0-like benchmark component—not a page within the page. */
+    .benchmark-section {
+      padding: clamp(58px, 6vw, 86px) var(--edge);
+      background: #f1ece6;
+    }
+
+    .benchmark-shell {
+      width: min(100%, 1080px);
+      padding: clamp(38px, 4.5vw, 62px);
+      border: 1px solid rgba(21, 22, 43, 0.16);
+      border-radius: 20px;
+      background: #e8edf8;
+    }
+
+    .benchmark-intro {
+      max-width: 720px;
+      margin: 0 auto 30px;
+      text-align: center;
+    }
+
+    .benchmark-intro .kicker {
+      display: none;
+    }
+
+    .benchmark-intro h2 {
+      margin: 0;
+      font-size: clamp(38px, 4.4vw, 58px);
+      line-height: 1;
+    }
+
+    .benchmark-intro > p {
+      max-width: 660px;
+      margin: 17px auto 0;
+      font-size: clamp(13px, 1.15vw, 16px);
+      line-height: 1.5;
+    }
+
+    .benchmark-readme {
+      margin-top: 18px;
+    }
+
+    .benchmark-orbits {
+      gap: 16px;
+      margin-bottom: 30px;
+    }
+
+    .benchmark-orbit {
+      width: clamp(130px, 13vw, 165px);
+      aspect-ratio: 1.25 / 1;
+      border-width: 1px;
+    }
+
+    .benchmark-orbit strong {
+      font-size: clamp(26px, 3vw, 38px);
+    }
+
+    .benchmark-orbit span {
+      margin-top: 5px;
+      font-size: 8px;
+    }
+
+    .horizontal-chart {
+      gap: 11px;
+    }
+
+    .horizontal-bar {
+      height: clamp(42px, 4vw, 52px);
+    }
+
+    .horizontal-bar strong,
+    .horizontal-bar output {
+      font-size: clamp(10px, 1vw, 13px);
+    }
+
+    .benchmark-results .bench-note {
+      margin-top: 17px;
+    }
+
+    /* Pull the closing artwork and footer upward and shorten the final page. */
+    .install-art {
+      height: clamp(190px, 19vw, 285px);
+      margin-top: clamp(30px, 4vw, 58px);
+      transform: translateY(-30px);
+    }
+
+    .install .footer {
+      margin-top: -28px;
+    }
+
+    /* Give the closing install moment the same scale as the narrative above it. */
+    .install-grid {
+      grid-template-columns: minmax(360px, 0.72fr) minmax(620px, 1.28fr);
+      gap: clamp(52px, 6vw, 110px);
+      align-items: center;
+    }
+
+    .install-copy .kicker {
+      font-size: clamp(11px, 0.9vw, 14px);
+    }
+
+    .install h2 {
+      font-size: clamp(48px, 5.2vw, 78px);
+    }
+
+    .install-copy > p {
+      max-width: 620px;
+      font-size: clamp(18px, 1.35vw, 22px);
+      line-height: 1.55;
+    }
+
+    .codebox {
+      width: calc(100% - clamp(36px, 4.5vw, 76px));
+      min-height: 340px;
+      margin-left: auto;
+      border-radius: 16px;
+    }
+
+    .code-tabs {
+      gap: clamp(26px, 3vw, 44px);
+      padding: 22px 28px;
+    }
+
+    .code-tab {
+      font-size: clamp(11px, 0.9vw, 14px);
+    }
+
+    .code-content pre {
+      min-height: 270px;
+      margin: 0;
+      padding: 34px 112px 34px 32px;
+      color: #f3ebe5;
+      font: 400 clamp(14px, 1.15vw, 18px) / 1.75 var(--mono);
+      white-space: pre-wrap;
+    }
+
+    .code-content .copy {
+      top: 22px;
+      right: 22px;
+      padding: 10px 14px;
+      font-size: clamp(10px, 0.75vw, 12px);
+    }
+
+    .install .footer {
+      justify-content: flex-start;
+      padding-top: 0;
+      color: #f3ebe5;
+      text-transform: none;
+    }
+
+    .install .footer .brand {
+      gap: 16px;
+      color: #f3ebe5;
+      font: 600 clamp(28px, 3vw, 44px) / 1 var(--display);
+      letter-spacing: -0.035em;
+    }
+
+    .install .footer .brand .mark {
+      width: clamp(58px, 5vw, 78px);
+      height: auto;
+    }
+
+    @media (max-width: 900px) {
+      .install-grid {
+        grid-template-columns: 1fr;
+        gap: 48px;
+      }
+
+      .codebox {
+        width: 100%;
+        min-height: 310px;
+        margin-left: 0;
+      }
+    }
+
+    /* Hero supporting hierarchy: readable without competing with the title. */
+    .hero-product {
+      margin-top: 17px;
+      font-size: clamp(20px, 1.55vw, 24px);
+    }
+
+    .hero-proto-center > p {
+      max-width: 710px;
+      color: rgba(21, 22, 34, 0.78);
+      font-size: clamp(16px, 1.35vw, 20px);
+      line-height: 1.5;
+    }
+
+    .hero-actions {
+      gap: 13px;
+      margin-top: 27px;
+    }
+
+    .hero-actions a,
+    .hero-actions .source-cta {
+      min-height: 48px;
+      padding: 12px 12px 12px 20px;
+      font-size: clamp(11px, 0.82vw, 13px);
+    }
+
+    .hero-actions a:first-child {
+      padding-inline: 21px;
+    }
+
+    .hero-actions .source-cta b {
+      width: 32px;
+      height: 32px;
+      font-size: 14px;
+    }
+
+    /* Brand first, then the problem it resolves. */
+    .hero-proto-center {
+      transform: translateY(calc(-38px + var(--copy-shift)));
+    }
+
+    .hero-product {
+      margin: 0 0 15px;
+      font-size: clamp(15px, 1.2vw, 18px);
+      transform: translateY(-3px);
+    }
+
+    .hero-proto-center .hero-headline {
+      transform: translateY(-1px);
+      /* 1.04em minus 1px: tightens the wrap so "yourself to every AI." sits one
+         pixel higher, independent of the clamped font-size. */
+      line-height: calc(1.04em - 2px);
+    }
+
+    @media (max-width: 850px) {
+      .hero-proto-center {
+        transform: translateY(calc(-30px + var(--copy-shift)));
+      }
+    }
+
+    /* The benchmark shell is structural only; the page surface stays visible. */
+    .benchmark-shell {
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+    }
+
+    .benchmark-section {
+      background: var(--paper);
+    }
+
+    .benchmark-orbit {
+      width: clamp(175px, 16vw, 210px);
+    }
+
+    .benchmark-orbit strong {
+      font-size: clamp(36px, 3.7vw, 50px);
+    }
+
+    .benchmark-orbit span {
+      margin-top: 8px;
+      font-size: clamp(10px, 0.8vw, 12px);
+      line-height: 1.45;
+    }
+
+    /* Final CTA and benchmark spacing refinements. */
+    .hero-actions .source-cta {
+      min-width: 152px;
+      justify-content: center;
+      padding: 14px 24px;
+      border: 0;
+      border-radius: 0;
+      color: #f3ebe5;
+      background: #2447b6;
+    }
+
+    .nav-links .nav-cta {
+      color: #15162b;
+      background: #f36b57;
+    }
+
+    .benchmark-results .benchmark-readme {
+      display: flex;
+      min-height: 52px;
+      margin: 30px auto 0;
+      padding: 10px 10px 10px 20px;
+      gap: 14px;
+      font-size: clamp(12px, 0.9vw, 14px);
+    }
+
+    .benchmark-results .benchmark-readme b {
+      width: 32px;
+      height: 32px;
+      font-size: 14px;
+    }
+
+    /* A muted garnet-rose action signal: warm, legible, never candy pink. */
+    .nav-links .nav-cta,
+    .benchmark-results .benchmark-readme {
+      border: 1px solid rgba(243, 235, 229, 0.28);
+      border-radius: 0;
+      color: #142b70;
+      background: #c8737d;
+      box-shadow: none;
+    }
+
+    .nav-links .nav-cta:hover,
+    .benchmark-results .benchmark-readme:hover {
+      color: #142b70;
+      background: #d68a93;
+      border-color: rgba(243, 235, 229, 0.54);
+    }
+
+    .nav-links .nav-cta b,
+    .benchmark-results .benchmark-readme b {
+      color: #f7f2ed;
+      background: #934652;
+    }
+
+    /* The final thought stands alone as a large, quiet closing statement. */
+    .install h2 {
+      max-width: 8ch;
+      font-size: clamp(62px, 7vw, 104px);
+      line-height: 0.9;
+    }
+
+    .codebox {
+      width: min(100%, 620px);
+      min-height: 280px;
+      border-color: rgba(169, 190, 232, 0.26);
+      background: rgba(10, 25, 76, 0.48);
+      box-shadow: none;
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+
+    .codebox .code-tabs {
+      gap: clamp(20px, 2.2vw, 34px);
+      padding: 17px 20px;
+    }
+
+    .codebox .code-content pre {
+      min-height: 215px;
+      padding: 28px 28px 28px 26px;
+    }
+
+    .code-tabs .copy {
+      position: static;
+      width: 34px;
+      height: 34px;
+      margin-left: auto;
+      padding: 7px;
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      border-color: rgba(169, 190, 232, 0.32);
+      color: #a9bee8;
+      background: rgba(169, 190, 232, 0.08);
+    }
+
+    .code-tabs .copy svg {
+      width: 18px;
+      height: 18px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.7;
+    }
+
+    .code-tabs .copy.copied svg {
+      display: none;
+    }
+
+    .code-tabs .copy.copied::after {
+      content: "✓";
+      font: 700 18px/1 var(--mono);
+    }
+
+    /* The next section's wave now sits 20px lower, leaving a calmer transition. */
+    .benchmark-section {
+      padding-top: clamp(78px, 7vw, 102px);
+      padding-bottom: 132px;
+    }
+
+    @media (max-width: 700px) {
+      .nav-links .nav-cta {
+        display: inline-flex;
+      }
+
+      .nav-links a:not(.nav-cta) {
+        display: none;
+      }
+
+      .benchmark-orbits {
+        align-items: stretch;
+      }
+
+      .benchmark-orbit {
+        width: min(44vw, 190px);
+      }
+
+      .horizontal-bar strong {
+        left: 14px;
+        font-size: 10px;
+      }
+
+      .horizontal-bar output {
+        left: auto;
+        right: 12px;
+        color: #15162b;
+        font-size: 10px;
+      }
+
+      .install-art > .install-art-phrase {
+        top: 29%;
+        font-size: clamp(28px, 8vw, 42px);
+      }
+    }
+
+    @media (max-width: 900px) {
+      .principles {
+        grid-template-columns: 1fr;
+      }
+
+      .principles-head {
+        grid-column: 1;
+      }
+
+      .principle {
+        min-height: 280px;
+      }
+    }
+
+    @media (max-width: 700px) {
+      .maps .master-line {
+        padding-block: 64px;
+      }
+
+      .map-row.layer {
+        padding-top: 60px;
+      }
+
+      .demo-section {
+        padding-inline: 18px;
+      }
+
+      .demo-placeholder {
+        border-radius: 16px;
+      }
+
+      .benchmark .scorecards {
+        flex-direction: column;
+      }
+
+      .benchmark .score {
+        min-width: 0;
+        width: 100%;
+      }
+
+      .benchmark .chart {
+        height: 300px;
+      }
+
+      .benchmark .bar-item label {
+        font-size: 6.5px;
+      }
+    }
+
+    @media (max-width: 700px) {
+      .tide-scroll {
+        height: 150svh;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .tide-scroll {
+        height: auto;
+      }
+
+      .tide-scroll .hero.hero-proto {
+        position: relative;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <nav class="nav">
+    <a class="brand" href="#top"><svg class="mark" viewBox="0 0 52 30" aria-hidden="true">
+        <circle class="a" cx="3" cy="24" r="3.2" />
+        <path d="M3 24C9 24 9 5 16 5s6 19 12 19S35 5 42 5s6 19 7 19" />
+        <circle class="b" cx="49" cy="24" r="3.2" />
+      </svg><span>meniscus</span></a>
+    <div class="nav-links">
+      <a class="nav-cta" href="https://github.com/magic-bubblez/meniscus">
+        <span>github</span><b>↗</b>
+      </a>
+    </div>
+  </nav>
+  <div class="page">
+    <span id="top" aria-hidden="true"></span>
+    <div class="tide-scroll">
+      <header class="hero hero-proto">
+        <div class="tide-underfill" aria-hidden="true"></div>
+        <div class="memory-rail left"><span>00 / memory field</span></div>
+        <div class="memory-rail right">
+          <span>local · deterministic</span>
+        </div>
+        <div class="hero-proto-center">
+          <svg class="mark" viewBox="0 0 52 30" aria-hidden="true">
+            <circle class="a" cx="3" cy="24" r="3.2" />
+            <path d="M3 24C9 24 9 5 16 5s6 19 12 19S35 5 42 5s6 19 7 19" />
+            <circle class="b" cx="49" cy="24" r="3.2" />
+          </svg>
+          <div class="hero-product">Meniscus</div>
+          <h1 class="hero-headline">
+            Stop introducing yourself to every AI.
+          </h1>
+          <p>
+            Persistent memory for every AI you use. Captured once, recalled
+            anywhere, kept on your machine.
+          </p>
+          <div class="hero-actions">
+            <div class="hero-install-snippet" id="install-snippet">
+              <button class="hero-copy-btn" id="copy-install-btn" title="Copy install commands"
+                aria-label="Copy install commands">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+              </button>
+              <code><span class="hero-command-line">uv tool install "meniscus[all]"</span><span
+                  class="hero-command-line">men init</span></code>
+            </div>
+          </div>
+        </div>
+        <svg class="memory-terrain" viewBox="0 0 1500 430" preserveAspectRatio="none" aria-hidden="true">
+          <path class="mass mid"
+            d="M0 430V244C91 219 173 258 257 247S405 174 507 191S636 251 744 232S922 127 1044 157S1190 235 1288 207S1412 158 1500 180V430Z" />
+          <path class="mass cobalt"
+            d="M580 430V310C683 263 762 291 851 264S1000 190 1102 207S1240 280 1337 248S1441 212 1500 224V430Z" />
+          <path class="mass"
+            d="M0 430V326C97 279 182 330 275 304S421 221 527 239S667 315 784 280S946 209 1065 235S1219 315 1320 279S1430 235 1500 252V430Z" />
+          <g>
+            <path class="pink-thread"
+              d="M-20 258C96 224 181 260 266 249S409 176 514 194S645 253 749 235S922 130 1049 161S1195 238 1295 209S1416 161 1520 182" />
+            <path class="pink-thread"
+              d="M-20 276C100 242 186 278 272 267S413 195 520 213S650 271 754 253S927 149 1055 180S1200 256 1301 227S1422 180 1520 200" />
+            <path class="pink-thread"
+              d="M-20 294C104 260 191 296 278 285S417 215 526 232S655 289 759 271S932 169 1061 199S1205 274 1307 245S1428 199 1520 218" />
+          </g>
+          <g>
+            <path class="topoline"
+              d="M-10 312C88 268 176 318 268 291S416 205 521 226S665 298 779 263S940 191 1061 219S1218 300 1315 264S1427 218 1510 238" />
+            <path class="topoline"
+              d="M-10 329C92 286 181 334 274 308S419 225 526 244S667 316 783 281S946 211 1067 238S1221 318 1320 282S1434 238 1510 256" />
+            <path class="topoline rose"
+              d="M-10 347C95 304 185 352 279 326S423 245 532 263S672 335 788 299S950 230 1073 257S1225 337 1326 301S1440 257 1510 274" />
+            <path class="topoline"
+              d="M-10 365C99 322 190 369 285 344S427 264 538 281S677 353 793 318S955 250 1079 276S1230 355 1331 320S1446 275 1510 292" />
+            <path class="topoline"
+              d="M-10 383C103 340 195 387 291 362S431 284 544 300S681 371 798 337S960 270 1085 295S1234 373 1337 338S1452 294 1510 310" />
+            <path class="topoline rose"
+              d="M-20 398C122 350 224 389 335 363S492 306 606 329S751 391 868 357S1026 298 1148 322S1312 384 1520 342" />
+            <path class="topoline"
+              d="M-20 414C126 367 230 405 341 380S497 324 611 347S756 407 873 374S1032 316 1154 340S1319 401 1520 360" />
+          </g>
+          <g>
+            <circle class="event" cx="91" cy="291" r="2.2" />
+            <circle class="event" cx="139" cy="310" r="2.2" />
+            <circle class="event hot" cx="205" cy="301" r="5" />
+            <circle class="event" cx="265" cy="283" r="2.2" />
+            <circle class="event recalled" cx="329" cy="251" r="5" />
+            <circle class="event" cx="390" cy="222" r="2.2" />
+            <circle class="event" cx="455" cy="205" r="2.2" />
+            <circle class="event hot" cx="520" cy="224" r="5" />
+            <circle class="event" cx="591" cy="263" r="2.2" />
+            <circle class="event" cx="667" cy="284" r="2.2" />
+            <circle class="event recalled" cx="748" cy="263" r="5" />
+            <circle class="event" cx="831" cy="224" r="2.2" />
+            <circle class="event" cx="914" cy="185" r="2.2" />
+            <circle class="event hot" cx="1002" cy="179" r="5" />
+            <circle class="event" cx="1091" cy="216" r="2.2" />
+            <circle class="event recalled" cx="1183" cy="265" r="5" />
+            <circle class="event" cx="1279" cy="261" r="2.2" />
+            <circle class="event hot" cx="1371" cy="222" r="5" />
+            <circle class="event" cx="1442" cy="229" r="2.2" />
+          </g>
+          <text x="189" y="281">event / decision</text>
+          <text x="962" y="164">retrieved / preference</text>
+          <text x="1203" y="289">source / intact</text>
+        </svg><span class="terrain-label left">broken events become a history</span><span
+          class="terrain-label right">coral = active · gold = recalled</span>
+      </header>
+    </div>
+    <section class="maps" id="memory-map">
+      <div class="map-row burden reveal">
+        <div class="map-label">
+          <span class="architecture-heading without-heading">
+            without meniscus
+            <svg class="architecture-arrow" viewBox="0 0 220 75" aria-hidden="true">
+              <path d="M4 38C43 10 77 59 118 30S178 13 210 40" />
+              <path d="M193 37L211 40L203 23" />
+            </svg>
+          </span>
+          <ul class="architecture-points">
+            <li>Your AIs are strangers to eachother.</li>
+            <li><span class="alert-you">YOU</span> carry all the context. Manually.</li>
+            <li><span class="alert-you">YOU</span> become the messenger between machines.</li>
+          </ul>
+        </div>
+        <svg class="map-svg" viewBox="0 0 940 430" role="img"
+          aria-label="You carrying context separately to many AI tools">
+          <defs>
+            <filter id="wobble">
+              <feTurbulence baseFrequency=".015" numOctaves="2" seed="4" result="n" />
+              <feDisplacementMap in="SourceGraphic" in2="n" scale="3" />
+            </filter>
+          </defs>
+          <path class="thread" stroke="#e2a0b8" d="M470 113C366 167 248 228 228 339" />
+          <path class="thread" stroke="#d9b34e" d="M475 115C418 192 380 258 363 330" />
+          <path class="thread" stroke="#176a5e" d="M482 114C465 204 484 269 478 366" />
+          <path class="thread" stroke="#f36b57" d="M491 114C545 190 563 267 585 334" />
+          <path class="thread" stroke="#94bfda" d="M498 112C589 170 676 224 699 335" />
+          <path class="thread" stroke="#9a75d4" d="M504 108C635 132 783 177 823 286" />
+          <path class="thread" stroke="#e88955" d="M464 112C339 197 184 238 151 366" />
+          <path class="thread" stroke="#4d8dc8" d="M486 113C511 203 420 259 432 377" />
+          <path class="thread" stroke="#d985a5" d="M499 109C628 199 749 238 769 370" />
+          <path class="echo" stroke="#1537ad" d="M501 120C618 150 731 214 820 280" />
+          <ellipse class="person" cx="484" cy="84" rx="112" ry="49" />
+          <circle cx="372" cy="84" r="6" fill="#d9b34e" />
+          <circle cx="596" cy="84" r="6" fill="#f36b57" />
+          <text class="coretext" x="484" y="91">YOU</text>
+          <g>
+            <circle class="tool" cx="226" cy="344" r="24" />
+            <text x="226" y="385">CODEX</text>
+            <circle class="tool" cx="362" cy="335" r="24" />
+            <text x="362" y="376">CURSOR</text>
+            <circle class="tool" cx="479" cy="372" r="24" />
+            <text x="479" y="413">GEMINI</text>
+            <circle class="tool" cx="586" cy="340" r="24" />
+            <text x="586" y="381">WINDSURF</text>
+            <circle class="tool" cx="701" cy="341" r="24" />
+            <text x="701" y="382">CLAUDE CODE</text>
+            <circle class="tool" cx="825" cy="290" r="24" />
+            <text x="825" y="329">+ CLIENTS</text>
+            <circle class="tool" cx="150" cy="372" r="17" />
+            <circle class="tool" cx="431" cy="383" r="17" />
+            <circle class="tool" cx="770" cy="375" r="17" />
+          </g>
+        </svg>
+      </div>
+      <div class="master-line">
+        You were meant to build — not to remember.
+      </div>
+      <div class="map-row layer reveal">
+        <div class="map-label">
+          <span class="architecture-heading with-heading">
+            with meniscus
+            <svg class="architecture-arrow" viewBox="0 0 220 75" aria-hidden="true">
+              <path d="M216 38C177 10 143 59 102 30S42 13 10 40" />
+              <path d="M27 37L9 40L17 23" />
+            </svg>
+          </span>
+          <ul class="architecture-points">
+            <li>Your AIs share <span class="memory-emphasis">one memory</span>.</li>
+            <li><span class="memory-emphasis">IT</span> carries the context. Automatically.</li>
+            <li>You do the work, it <span class="memory-emphasis">remembers</span>.</li>
+          </ul>
+        </div>
+        <svg class="map-svg" viewBox="0 0 940 430" role="img"
+          aria-label="You communicate with Meniscus, which serves memory to many AI tools">
+          <path class="thread" stroke="#1537ad" d="M126 221C197 221 244 186 314 160" />
+          <path class="thread" stroke="#e2a0b8" d="M127 231C211 245 238 274 312 283" />
+          <path class="echo" stroke="#d9b34e" d="M128 211C212 193 245 164 312 151" />
+          <text x="126" y="300">decisions · constraints · preferences</text>
+          <circle class="person" cx="91" cy="222" r="43" />
+          <text class="coretext" x="91" y="229">YOU</text>
+          <path class="thread" stroke="#1537ad" d="M504 183C584 130 661 95 743 83" />
+          <path class="thread" stroke="#e2a0b8" d="M512 199C623 181 720 174 828 182" />
+          <path class="thread" stroke="#d9b34e" d="M512 221C607 233 671 260 759 293" />
+          <path class="thread" stroke="#176a5e" d="M499 242C557 290 596 320 650 355" />
+          <path class="thread" stroke="#f36b57" d="M478 249C490 299 494 332 499 376" />
+          <path class="thread" stroke="#94bfda" d="M455 248C415 294 387 327 352 363" />
+          <path class="thread" stroke="#9a75d4" d="M436 235C368 263 318 287 251 311" />
+          <path class="echo" stroke="#f36b57" d="M506 176C616 117 701 100 746 87" />
+          <ellipse class="memory" cx="418" cy="200" rx="103" ry="64" />
+          <circle cx="315" cy="200" r="6" fill="#d9b34e" />
+          <circle cx="521" cy="200" r="6" fill="#f36b57" />
+          <text x="418" y="193" fill="#fff" style="fill: #fff; font-size: 16px; font-family: var(--display)">
+            MENISCUS
+          </text>
+          <text x="418" y="217" fill="#fff" style="fill: #cbd4ff; font-size: 8px">
+            ONE LOCAL HISTORY
+          </text>
+          <circle class="tool" cx="748" cy="82" r="23" />
+          <text x="748" y="45">CLAUDE</text>
+          <circle class="tool" cx="833" cy="183" r="23" />
+          <text x="833" y="226">CODEX</text>
+          <circle class="tool" cx="764" cy="297" r="23" />
+          <text x="764" y="340">CURSOR</text>
+          <circle class="tool" cx="652" cy="359" r="23" />
+          <text x="652" y="402">GEMINI</text>
+          <circle class="tool" cx="500" cy="381" r="23" />
+          <text x="500" y="423">WINDSURF</text>
+          <circle class="tool" cx="350" cy="367" r="23" />
+          <text x="350" y="410">+ CLIENTS</text>
+          <circle class="tool" cx="247" cy="314" r="18" />
+        </svg>
+      </div>
+      <div class="chapter-outro-waves" aria-hidden="true">
+        <svg viewBox="0 0 1500 430" preserveAspectRatio="none">
+          <g transform="translate(0 430) scale(1 -1)">
+            <path class="outro-mass rose"
+              d="M0 430V244C91 219 173 258 257 247S405 174 507 191S636 251 744 232S922 127 1044 157S1190 235 1288 207S1412 158 1500 180V430Z" />
+            <path class="outro-mass sky"
+              d="M580 430V310C683 263 762 291 851 264S1000 190 1102 207S1240 280 1337 248S1441 212 1500 224V430Z" />
+            <path class="outro-mass indigo"
+              d="M0 430V326C97 279 182 330 275 304S421 221 527 239S667 315 784 280S946 209 1065 235S1219 315 1320 279S1430 235 1500 252V430Z" />
+            <g class="outro-lines rose-lines">
+              <path
+                d="M-20 258C96 224 181 260 266 249S409 176 514 194S645 253 749 235S922 130 1049 161S1195 238 1295 209S1416 161 1520 182" />
+              <path
+                d="M-20 276C100 242 186 278 272 267S413 195 520 213S650 271 754 253S927 149 1055 180S1200 256 1301 227S1422 180 1520 200" />
+              <path
+                d="M-20 294C104 260 191 296 278 285S417 215 526 232S655 289 759 271S932 169 1061 199S1205 274 1307 245S1428 199 1520 218" />
+            </g>
+            <g class="outro-lines indigo-lines">
+              <path
+                d="M-10 312C88 268 176 318 268 291S416 205 521 226S665 298 779 263S940 191 1061 219S1218 300 1315 264S1427 218 1510 238" />
+              <path
+                d="M-10 329C92 286 181 334 274 308S419 225 526 244S667 316 783 281S946 211 1067 238S1221 318 1320 282S1434 238 1510 256" />
+              <path
+                d="M-10 347C95 304 185 352 279 326S423 245 532 263S672 335 788 299S950 230 1073 257S1225 337 1326 301S1440 257 1510 274" />
+              <path
+                d="M-10 365C99 322 190 369 285 344S427 264 538 281S677 353 793 318S955 250 1079 276S1230 355 1331 320S1446 275 1510 292" />
+              <path
+                d="M-10 383C103 340 195 387 291 362S431 284 544 300S681 371 798 337S960 270 1085 295S1234 373 1337 338S1452 294 1510 310" />
+              <path
+                d="M-20 398C122 350 224 389 335 363S492 306 606 329S751 391 868 357S1026 298 1148 322S1312 384 1520 342" />
+              <path
+                d="M-20 414C126 367 230 405 341 380S497 324 611 347S756 407 873 374S1032 316 1154 340S1319 401 1520 360" />
+            </g>
+          </g>
+        </svg>
+      </div>
+    </section>
+    <section class="demo-section" id="demo">
+      <div class="demo-shell reveal">
+        <h2 class="demo-title">See how memory moves beneath your tools.</h2>
+        <div class="demo-placeholder">
+          <span>Demo video</span>
+          <small>reserved · 16:9</small>
+        </div>
+      </div>
+    </section>
+    <section class="principles">
+      <div class="principles-wave" aria-hidden="true">
+        <svg viewBox="0 0 1600 92" preserveAspectRatio="none">
+          <path
+            d="M0 48C176 3 322 82 500 39S808 12 968 54S1276 84 1600 25V92H0Z"
+          />
+        </svg>
+      </div>
+      <div class="principles-head reveal">
+        <h2>Memory you can audit is memory you can trust.</h2>
+      </div>
+      <article class="principle reveal">
+        <span>01</span>
+        <h3>Append-only</h3>
+        <div class="principle-copy">
+          <p>
+            Nothing is ever overwritten or deleted—facts are only added. A
+            wrong one stays recoverable, so your memory cannot be silently
+            corrupted.
+          </p>
+        </div>
+      </article>
+      <article class="principle reveal">
+        <span>02</span>
+        <h3>Deterministic retrieval</h3>
+        <div class="principle-copy">
+          <p>
+            The same query returns the same result, every time—no model sits
+            in the read path. What surfaces is a fixed formula you can
+            reproduce, not a black box.
+          </p>
+        </div>
+      </article>
+      <article class="principle reveal">
+        <span>03</span>
+        <h3>No server, no cloud</h3>
+        <div class="principle-copy">
+          <p>
+            One file on your machine. No account, no vendor, nothing anyone
+            can revoke—back it up by copying a file.
+          </p>
+        </div>
+      </article>
+      <article class="principle reveal">
+        <span>04</span>
+        <h3>Traceable to its source</h3>
+        <div class="principle-copy">
+          <p>
+            Every fact links back to the exact raw moment it came from. You
+            can always check where a memory came from, not just what it
+            claims.
+          </p>
+        </div>
+      </article>
+      <article class="principle reveal">
+        <span>05</span>
+        <h3>Just SQLite</h3>
+        <div class="principle-copy">
+          <p>
+            Your whole memory is one readable file. Query it in plain SQL—the
+            data your AI sees is the data you can inspect yourself.
+          </p>
+        </div>
+      </article>
+      <article class="principle reveal">
+        <span>06</span>
+        <h3>Model-attributed</h3>
+        <div class="principle-copy">
+          <p>
+            Every fact records which model wrote it, and when. Nothing enters
+            your memory anonymously—you can audit exactly what produced each
+            one.
+          </p>
+        </div>
+      </article>
+      <div class="principles-wave exit" aria-hidden="true">
+        <svg viewBox="0 0 1600 92" preserveAspectRatio="none">
+          <path
+            d="M0 48C176 3 322 82 500 39S808 12 968 54S1276 84 1600 25V92H0Z"
+          />
+        </svg>
+      </div>
+    </section>
+    <section class="benchmark-section">
+      <div class="benchmark-shell">
+        <div class="benchmark-intro reveal">
+          <div class="kicker"><i class="dot"></i>03 / reproducible evaluation</div>
+          <h2>What the benchmark says.</h2>
+          <p>
+            LongMemEval-S. One hundred stratified instances across six kinds of
+            long-term memory. Frozen memories make every retrieval run
+            deterministic—and the results reproducible on your machine.
+          </p>
+        </div>
+        <div class="benchmark-results reveal">
+          <div class="benchmark-orbits" aria-label="Headline benchmark results">
+            <div class="benchmark-orbit context-orbit">
+              <strong>99.1%</strong>
+              <span>less context<br />sent to the model</span>
+            </div>
+            <div class="benchmark-orbit recall-orbit">
+              <strong>0.89</strong>
+              <span>overall evidence<br />recall</span>
+            </div>
+          </div>
+          <div class="horizontal-chart" aria-label="Recall by LongMemEval category">
+            <div class="horizontal-bar" style="--score: 100%">
+              <div class="horizontal-track"><span></span></div>
+              <strong>Single-session · user</strong>
+              <output>1.00</output>
+            </div>
+            <div class="horizontal-bar" style="--score: 100%">
+              <div class="horizontal-track"><span></span></div>
+              <strong>Single-session · assistant</strong>
+              <output>1.00</output>
+            </div>
+            <div class="horizontal-bar" style="--score: 73%">
+              <div class="horizontal-track"><span></span></div>
+              <strong>Single-session · preference</strong>
+              <output>0.73</output>
+            </div>
+            <div class="horizontal-bar" style="--score: 100%">
+              <div class="horizontal-track"><span></span></div>
+              <strong>Knowledge update</strong>
+              <output>1.00</output>
+            </div>
+            <div class="horizontal-bar" style="--score: 93%">
+              <div class="horizontal-track"><span></span></div>
+              <strong>Temporal reasoning</strong>
+              <output>0.93</output>
+            </div>
+            <div class="horizontal-bar" style="--score: 68%">
+              <div class="horizontal-track"><span></span></div>
+              <strong>Multi-session</strong>
+              <output>0.68</output>
+            </div>
+          </div>
+          <a
+            class="benchmark-readme"
+            href="https://github.com/magic-bubblez/meniscus/blob/main/bench/README.md"
+          >
+            reproduce the benchmark <b>↗</b>
+          </a>
+        </div>
+      </div>
+    </section>
+    <section class="install" id="install">
+      <div class="install-entry-wave" aria-hidden="true">
+        <svg viewBox="0 0 1600 105" preserveAspectRatio="none">
+          <path fill="#0b1d63" d="M0 44C181 86 331 13 504 55S807 89 965 43S1270 12 1600 67V105H0Z" />
+          <path d="M-20 40C174 81 327 17 502 58S806 84 964 47S1272 17 1620 71" />
+        </svg>
+      </div>
+      <div class="install-grid">
+        <div class="install-copy">
+          <h2>You, remembered.</h2>
+        </div>
+        <div>
+          <div class="codebox">
+            <div class="code-tabs">
+              <button class="code-tab active" data-code="install">Install</button>
+              <button class="code-tab" data-code="claude">Claude</button>
+              <button class="code-tab" data-code="codex">Codex</button>
+              <button class="code-tab" data-code="mcp">MCP</button>
+              <button class="copy" aria-label="Copy command" title="Copy command">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="8" y="8" width="11" height="11" rx="1" />
+                  <path d="M16 8V5H5v11h3" />
+                </svg>
+              </button>
+            </div>
+            <div class="code-content">
+              <pre id="command">uv tool install "meniscus[all]"
+men init</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="install-art" aria-hidden="true">
+        <svg viewBox="0 0 1600 330" preserveAspectRatio="none">
+          <g class="memory-rings">
+            <path d="M535 172C610 87 732 52 833 71S1030 161 990 221S778 289 646 246S478 237 535 172Z" />
+            <path d="M584 171C643 108 738 82 822 97S970 158 944 207S788 259 682 229S539 221 584 171Z" />
+            <path d="M637 170C681 129 744 113 806 122S910 160 897 196S799 227 718 211S604 203 637 170Z" />
+            <path d="M692 169C722 144 759 138 795 142S850 161 846 184S804 202 756 193S670 188 692 169Z" />
+          </g>
+          <g class="memory-streams">
+            <path d="M-40 228C166 126 328 279 535 172" />
+            <path d="M-40 265C184 166 359 303 584 204" />
+            <path d="M990 221C1191 116 1382 267 1640 147" />
+            <path d="M944 244C1180 175 1377 313 1640 211" />
+          </g>
+        </svg>
+      </div>
+      <footer class="footer">
+        <a class="brand" href="#top"><svg class="mark" viewBox="0 0 52 30">
+            <circle class="a" cx="3" cy="24" r="3.2" />
+            <path d="M3 24C9 24 9 5 16 5s6 19 12 19S35 5 42 5s6 19 7 19" />
+            <circle class="b" cx="49" cy="24" r="3.2" />
+          </svg><span>meniscus</span></a>
+      </footer>
+    </section>
+  </div>
+  <script>
+    (() => {
+      "use strict";
+
+      const hero = document.querySelector(".hero-proto");
+      const tideStage = document.querySelector(".tide-scroll");
+      const terrain = hero?.querySelector(".memory-terrain");
+      const burden = document.querySelector(".map-row.burden");
+      const layerRow = document.querySelector(".map-row.layer");
+      const reducedMotion = matchMedia(
+        "(prefers-reduced-motion: reduce)",
+      ).matches;
+
+      if (!hero || !tideStage || !terrain || !burden || !layerRow) return;
+
+      const sourceDiagram = burden.querySelector(".map-svg");
+      const existingLayerDiagram = layerRow.querySelector(".map-svg");
+
+      if (sourceDiagram && existingLayerDiagram) {
+        const svgNamespace = "http://www.w3.org/2000/svg";
+        const sharedDiagram = sourceDiagram.cloneNode(true);
+        const memoryNode = sharedDiagram.querySelector(".person");
+        const memoryLabel = sharedDiagram.querySelector(".coretext");
+
+        sharedDiagram.setAttribute("viewBox", "0 -100 940 530");
+        sharedDiagram.setAttribute(
+          "aria-label",
+          "You control Meniscus, which serves one shared memory to the same AI tools",
+        );
+
+        if (memoryNode) {
+          memoryNode.setAttribute("class", "memory");
+          memoryNode.setAttribute("rx", "126");
+          memoryNode.setAttribute("ry", "53");
+        }
+
+        if (memoryLabel) {
+          memoryLabel.textContent = "MENISCUS";
+        }
+
+        const controlThread = document.createElementNS(svgNamespace, "path");
+        controlThread.setAttribute("class", "thread control-thread");
+        controlThread.setAttribute("stroke", "#71dfa2");
+        controlThread.setAttribute("d", "M484 -15C484 3 484 17 484 31");
+
+        const youNode = document.createElementNS(svgNamespace, "ellipse");
+        youNode.setAttribute("class", "person control-you");
+        youNode.setAttribute("cx", "484");
+        youNode.setAttribute("cy", "-48");
+        youNode.setAttribute("rx", "82");
+        youNode.setAttribute("ry", "34");
+
+        const youLabel = document.createElementNS(svgNamespace, "text");
+        youLabel.setAttribute("class", "coretext");
+        youLabel.setAttribute("x", "484");
+        youLabel.setAttribute("y", "-42");
+        youLabel.textContent = "YOU";
+
+        const firstThread = sharedDiagram.querySelector(".thread");
+        sharedDiagram.insertBefore(controlThread, firstThread);
+        sharedDiagram.insertBefore(youNode, controlThread);
+        sharedDiagram.insertBefore(youLabel, controlThread);
+        existingLayerDiagram.replaceWith(sharedDiagram);
+      }
+
+      if (reducedMotion) return;
+
+      const revealBurdenInTide = innerWidth > 850;
+
+      if (revealBurdenInTide) {
+        burden.classList.remove("reveal");
+        burden.classList.add("tide-burden");
+        hero.append(burden);
+      }
+
+      let framePending = false;
+
+      const updateTide = () => {
+        const stageTop = tideStage.offsetTop;
+        const travel = Math.max(1, tideStage.offsetHeight - innerHeight);
+        const progress = Math.max(
+          0,
+          Math.min(1, (scrollY - stageTop) / travel),
+        );
+        const waveProgress = progress * progress * (3 - 2 * progress);
+        const haloProgress = Math.max(
+          0,
+          Math.min(1, (progress - 0.16) / 0.42),
+        );
+        const copyProgress = Math.max(
+          0,
+          Math.min(1, (progress - 0.16) / 0.42),
+        );
+        const burdenProgress = Math.max(
+          0,
+          Math.min(1, (progress - 0.36) / 0.5),
+        );
+        const easedBurden =
+          burdenProgress * burdenProgress * (3 - 2 * burdenProgress);
+        const screenRise = hero.offsetHeight * 0.68 * waveProgress;
+        const terrainHeight = Math.max(
+          1,
+          terrain.getBoundingClientRect().height,
+        );
+        const terrainUnits = terrain.viewBox.baseVal.height || 430;
+        const svgRise = (screenRise * terrainUnits) / terrainHeight;
+
+        hero.style.setProperty("--tide-inner-shift", `${-svgRise}px`);
+        hero.style.setProperty("--tide-cover", `${screenRise}px`);
+        hero.style.setProperty("--halo-opacity", String(1 - haloProgress));
+        hero.style.setProperty("--copy-shift", `${-18 * copyProgress}px`);
+        hero.style.setProperty("--copy-opacity", String(1 - copyProgress));
+
+        if (revealBurdenInTide) {
+          const heroRect = hero.getBoundingClientRect();
+          const terrainRect = terrain.getBoundingClientRect();
+          const waveContentGap =
+            parseFloat(
+              getComputedStyle(hero).getPropertyValue("--wave-content-gap"),
+            ) || 60;
+          const lastContourY =
+            terrainRect.top -
+            heroRect.top +
+            terrainHeight * (426 / 430) -
+            screenRise;
+          const burdenTargetY = Math.max(96, lastContourY + waveContentGap);
+          const burdenStartY = hero.offsetHeight * 1.04;
+          const burdenY =
+            burdenStartY + (burdenTargetY - burdenStartY) * easedBurden;
+          const burdenOpacity = Math.max(
+            0,
+            Math.min(1, (burdenProgress - 0.42) / 0.22),
+          );
+
+          hero.style.setProperty("--burden-y", `${burdenY}px`);
+          hero.style.setProperty("--burden-opacity", String(burdenOpacity));
+        }
+        framePending = false;
+      };
+
+      addEventListener(
+        "scroll",
+        () => {
+          if (framePending) return;
+          framePending = true;
+          requestAnimationFrame(updateTide);
+        },
+        { passive: true },
+      );
+
+      addEventListener("resize", updateTide, { passive: true });
+
+      updateTide();
+    })();
+  </script>
+  <script>
+    const copyToClipboard = async (text) => {
+      try {
+        await navigator.clipboard.writeText(text);
+        return;
+      } catch {}
+
+      const field = document.createElement("textarea");
+      field.value = text;
+      field.setAttribute("readonly", "");
+      field.style.cssText = "position:fixed;top:0;left:0;opacity:0;pointer-events:none";
+      document.body.appendChild(field);
+      field.focus();
+      field.select();
+      field.setSelectionRange(0, field.value.length);
+      try {
+        document.execCommand("copy");
+      } finally {
+        field.remove();
+      }
+    };
+
+    (() => {
+      "use strict";
+      const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches,
+        els = document.querySelectorAll(".reveal");
+      if (!reduced && "IntersectionObserver" in window) {
+        const ob = new IntersectionObserver(
+          (es) =>
+            es.forEach((e) => {
+              if (e.isIntersecting) {
+                e.target.classList.add("in");
+                ob.unobserve(e.target);
+              }
+            }),
+          { threshold: 0.08 },
+        );
+        els.forEach((e) => ob.observe(e));
+      } else els.forEach((e) => e.classList.add("in"));
+      const commands = {
+        install: 'uv tool install "meniscus[all]"\nmen init',
+        claude:
+          'claude mcp add --scope user meniscus -- "$(command -v men-mcp)"',
+        codex: 'codex mcp add meniscus -- "$(command -v men-mcp)"',
+        mcp: '{\n  "mcpServers": {\n    "meniscus": {\n      "command": "/absolute/path/to/men-mcp"\n    }\n  }\n}',
+      };
+      const out = document.querySelector("#command");
+      document.querySelectorAll(".code-tab").forEach((t) =>
+        t.addEventListener("click", () => {
+          document
+            .querySelectorAll(".code-tab")
+            .forEach((x) => x.classList.toggle("active", x === t));
+          out.textContent = commands[t.dataset.code];
+        }),
+      );
+      const copy = document.querySelector(".copy");
+      copy.addEventListener("click", async () => {
+        try {
+          await copyToClipboard(out.textContent);
+          copy.classList.add("copied");
+          copy.setAttribute("aria-label", "Copied");
+          copy.setAttribute("title", "Copied");
+          setTimeout(() => {
+            copy.classList.remove("copied");
+            copy.setAttribute("aria-label", "Copy command");
+            copy.setAttribute("title", "Copy command");
+          }, 1200);
+        } catch {
+          copy.setAttribute("aria-label", "Copy unavailable; select the command");
+          copy.setAttribute("title", "Select the command to copy it");
+        }
+      });
+    })();
+  </script>
+  <script>
+    (() => {
+      const btn = document.getElementById("copy-install-btn");
+      if (!btn) return;
+      const text = 'uv tool install "meniscus[all]"\nmen init';
+
+      function markCopied() {
+        btn.classList.add("copied");
+        btn.setAttribute("aria-label", "Copied!");
+        btn.setAttribute("title", "Copied!");
+        setTimeout(() => {
+          btn.classList.remove("copied");
+          btn.setAttribute("aria-label", "Copy install commands");
+          btn.setAttribute("title", "Copy install commands");
+        }, 1500);
+      }
+
+      // Same path as the footer copy button: the async Clipboard API first,
+      // which is what actually works here, with execCommand only as a fallback.
+      btn.addEventListener("click", async () => {
+        try {
+          await copyToClipboard(text);
+          markCopied();
+        } catch {
+          btn.setAttribute("aria-label", "Copy unavailable; select the commands");
+          btn.setAttribute("title", "Select the commands to copy them");
+        }
+      });
+    })();
+  </script>
+</body>
+
+</html>

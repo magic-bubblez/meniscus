@@ -4414,6 +4414,9 @@
       color: rgba(21, 22, 34, 0.78);
       font-size: clamp(16px, 1.35vw, 20px);
       line-height: 1.5;
+      /* Opens the gap below the headline by 1.5px. A transform moves only this
+         paragraph, leaving the headline and the install snippet where they are. */
+      transform: translateY(1.5px);
     }
 
     .hero-actions {

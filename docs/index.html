@@ -100,6 +100,13 @@
       height: 27px;
     }
 
+    .brand-logo {
+      height: 52px;
+      width: auto;
+      display: block;
+      margin-left: -10px;
+    }
+
     .mark path {
       fill: none;
       stroke: currentColor;
@@ -3212,6 +3219,56 @@
         #ebe5e0;
     }
 
+    .demo-video-wrap {
+      position: relative;
+      border-radius: 22px;
+      overflow: hidden;
+      background: #0d1a4b;
+      box-shadow: 0 24px 60px -28px rgba(13, 26, 75, 0.5);
+      cursor: pointer;
+    }
+
+    .demo-video {
+      width: 100%;
+      display: block;
+    }
+
+    .demo-play {
+      position: absolute;
+      inset: 0;
+      margin: auto;
+      width: 84px;
+      height: 84px;
+      border: none;
+      border-radius: 50%;
+      background: rgba(13, 26, 75, 0.55);
+      backdrop-filter: blur(6px);
+      cursor: pointer;
+      transition: opacity 0.25s ease, transform 0.25s ease;
+    }
+
+    .demo-play::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      margin: auto;
+      width: 0;
+      height: 0;
+      border-style: solid;
+      border-width: 15px 0 15px 26px;
+      border-color: transparent transparent transparent #fff;
+      transform: translateX(3px);
+    }
+
+    .demo-play:hover {
+      transform: scale(1.06);
+    }
+
+    .demo-video-wrap.is-playing .demo-play {
+      opacity: 0;
+      pointer-events: none;
+    }
+
     .demo-placeholder span {
       font: 600 clamp(25px, 3vw, 42px) var(--display);
       letter-spacing: -0.04em;
@@ -3440,6 +3497,7 @@
       font: 600 30px/1.15 var(--display);
       letter-spacing: -0.04em;
     }
+
 
     .demo-placeholder {
       position: relative;
@@ -3854,7 +3912,7 @@
       font-size: clamp(58px, 7vw, 104px);
     }
 
-    .benchmark-intro > p {
+    .benchmark-intro>p {
       max-width: 790px;
       margin: 28px 0 0;
       color: rgba(21, 22, 43, 0.68);
@@ -3974,7 +4032,7 @@
     }
 
     /* A closing sentence split across the same threads that carry the art. */
-    .install-art > .install-art-phrase {
+    .install-art>.install-art-phrase {
       position: absolute;
       z-index: 3;
       top: 36%;
@@ -3985,11 +4043,11 @@
       transform: none;
     }
 
-    .install-art > .install-art-phrase.left {
+    .install-art>.install-art-phrase.left {
       left: 6.5%;
     }
 
-    .install-art > .install-art-phrase.right {
+    .install-art>.install-art-phrase.right {
       right: 6.5%;
       left: auto;
       color: #d99aaf;
@@ -4065,7 +4123,7 @@
       --layer-diagram-scale: 1.28;
     }
 
-    .map-row.layer .map-label > .architecture-heading.with-heading {
+    .map-row.layer .map-label>.architecture-heading.with-heading {
       font: 500 clamp(56px, 4.4vw, 74px) / 0.96 var(--sans) !important;
       font-style: normal !important;
       letter-spacing: -0.06em;
@@ -4130,8 +4188,7 @@
 
     .principles {
       position: relative;
-      padding: clamp(66px, 6vw, 88px) var(--edge)
-        clamp(72px, 7vw, 104px);
+      padding: clamp(66px, 6vw, 88px) var(--edge) clamp(72px, 7vw, 104px);
       gap: 14px;
       background: #eee1bd;
       overflow: visible;
@@ -4201,7 +4258,7 @@
       background: rgba(255, 255, 255, 0.25);
     }
 
-    .principle > span {
+    .principle>span {
       position: absolute;
       top: 21px;
       right: 25px;
@@ -4259,7 +4316,7 @@
       line-height: 1;
     }
 
-    .benchmark-intro > p {
+    .benchmark-intro>p {
       max-width: 660px;
       margin: 17px auto 0;
       font-size: clamp(13px, 1.15vw, 16px);
@@ -4333,7 +4390,7 @@
       font-size: clamp(48px, 5.2vw, 78px);
     }
 
-    .install-copy > p {
+    .install-copy>p {
       max-width: 620px;
       font-size: clamp(18px, 1.35vw, 22px);
       line-height: 1.55;
@@ -4409,7 +4466,7 @@
       font-size: clamp(20px, 1.55vw, 24px);
     }
 
-    .hero-proto-center > p {
+    .hero-proto-center>p {
       max-width: 710px;
       color: rgba(21, 22, 34, 0.78);
       font-size: clamp(16px, 1.35vw, 20px);
@@ -4638,7 +4695,7 @@
         font-size: 10px;
       }
 
-      .install-art > .install-art-phrase {
+      .install-art>.install-art-phrase {
         top: 29%;
         font-size: clamp(28px, 8vw, 42px);
       }
@@ -4713,11 +4770,7 @@
 
 <body>
   <nav class="nav">
-    <a class="brand" href="#top"><svg class="mark" viewBox="0 0 52 30" aria-hidden="true">
-        <circle class="a" cx="3" cy="24" r="3.2" />
-        <path d="M3 24C9 24 9 5 16 5s6 19 12 19S35 5 42 5s6 19 7 19" />
-        <circle class="b" cx="49" cy="24" r="3.2" />
-      </svg><span>meniscus</span></a>
+    <a class="brand" href="#top"><img class="brand-logo" src="meniscus-logo.png" alt="Meniscus"></a>
     <div class="nav-links">
       <a class="nav-cta" href="https://github.com/magic-bubblez/meniscus">
         <span>github</span><b>↗</b>
@@ -4751,8 +4804,8 @@
             <div class="hero-install-snippet" id="install-snippet">
               <button class="hero-copy-btn" id="copy-install-btn" title="Copy install commands"
                 aria-label="Copy install commands">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                  stroke-linejoin="round" aria-hidden="true">
                   <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                   <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
                 </svg>
@@ -4976,18 +5029,16 @@
     <section class="demo-section" id="demo">
       <div class="demo-shell reveal">
         <h2 class="demo-title">See how memory moves beneath your tools.</h2>
-        <div class="demo-placeholder">
-          <span>Demo video</span>
-          <small>reserved · 16:9</small>
+        <div class="demo-video-wrap" id="demo-player">
+          <video class="demo-video" src="demo.mp4" poster="demo-poster.jpg" playsinline preload="metadata"></video>
+          <button class="demo-play" type="button" aria-label="Play demo"></button>
         </div>
       </div>
     </section>
     <section class="principles">
       <div class="principles-wave" aria-hidden="true">
         <svg viewBox="0 0 1600 92" preserveAspectRatio="none">
-          <path
-            d="M0 48C176 3 322 82 500 39S808 12 968 54S1276 84 1600 25V92H0Z"
-          />
+          <path d="M0 48C176 3 322 82 500 39S808 12 968 54S1276 84 1600 25V92H0Z" />
         </svg>
       </div>
       <div class="principles-head reveal">
@@ -4998,7 +5049,7 @@
         <h3>Append-only</h3>
         <div class="principle-copy">
           <p>
-            Nothing is ever overwritten or deleted—facts are only added. A
+            Nothing is ever overwritten or deleted - facts are only added. A
             wrong one stays recoverable, so your memory cannot be silently
             corrupted.
           </p>
@@ -5009,9 +5060,8 @@
         <h3>Deterministic retrieval</h3>
         <div class="principle-copy">
           <p>
-            The same query returns the same result, every time—no model sits
-            in the read path. What surfaces is a fixed formula you can
-            reproduce, not a black box.
+            The same query returns the same result, every time. No LLM in the read path - retrieval is a fixed,
+            reproducible ranking over your facts.
           </p>
         </div>
       </article>
@@ -5041,7 +5091,7 @@
         <h3>Just SQLite</h3>
         <div class="principle-copy">
           <p>
-            Your whole memory is one readable file. Query it in plain SQL—the
+            Your whole memory is one readable file. Query it in plain SQL - the
             data your AI sees is the data you can inspect yourself.
           </p>
         </div>
@@ -5052,16 +5102,14 @@
         <div class="principle-copy">
           <p>
             Every fact records which model wrote it, and when. Nothing enters
-            your memory anonymously—you can audit exactly what produced each
+            your memory anonymously - you can audit exactly what produced each
             one.
           </p>
         </div>
       </article>
       <div class="principles-wave exit" aria-hidden="true">
         <svg viewBox="0 0 1600 92" preserveAspectRatio="none">
-          <path
-            d="M0 48C176 3 322 82 500 39S808 12 968 54S1276 84 1600 25V92H0Z"
-          />
+          <path d="M0 48C176 3 322 82 500 39S808 12 968 54S1276 84 1600 25V92H0Z" />
         </svg>
       </div>
     </section>
@@ -5119,10 +5167,7 @@
               <output>0.68</output>
             </div>
           </div>
-          <a
-            class="benchmark-readme"
-            href="https://github.com/magic-bubblez/meniscus/blob/main/bench/README.md"
-          >
+          <a class="benchmark-readme" href="https://github.com/magic-bubblez/meniscus/blob/main/bench/README.md">
             reproduce the benchmark <b>↗</b>
           </a>
         </div>
@@ -5345,7 +5390,7 @@ men init</pre>
       try {
         await navigator.clipboard.writeText(text);
         return;
-      } catch {}
+      } catch { }
 
       const field = document.createElement("textarea");
       field.value = text;
@@ -5442,6 +5487,18 @@ men init</pre>
           btn.setAttribute("title", "Select the commands to copy them");
         }
       });
+    })();
+  </script>
+  <script>
+    (() => {
+      const player = document.getElementById("demo-player");
+      if (!player) return;
+      const video = player.querySelector(".demo-video");
+      const toggle = () => (video.paused ? video.play() : video.pause());
+      player.querySelector(".demo-play").addEventListener("click", toggle);
+      video.addEventListener("click", toggle);
+      video.addEventListener("play", () => player.classList.add("is-playing"));
+      video.addEventListener("pause", () => player.classList.remove("is-playing"));
     })();
   </script>
 </body>
